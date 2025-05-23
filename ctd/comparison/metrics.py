@@ -69,58 +69,6 @@ def get_signal_r2(signal_true, signal_pred):
     return signal_r2
 
 
-def get_linear_cycle_consistency(
-    inf_latents_train, inf_rates_train, inf_latents_val, inf_rates_val, noise_level=0.01
-):
-    if len(inf_latents_train.shape) == 3:
-        n_b_pred, n_t_pred, n_d_pred = inf_latents_train.shape
-        inf_latents_train_flat = inf_latents_train.reshape(-1, n_d_pred)
-        inf_latents_val_flat = inf_latents_val.reshape(-1, n_d_pred)
-
-    else:
-        inf_latents_train_flat = inf_latents_train
-
-    if len(inf_rates_train.shape) == 3:
-        n_b_true, n_t_true, n_d_true = inf_rates_train.shape
-        inf_rates_train_flat = inf_rates_train.reshape(-1, n_d_true)
-        inf_rates_val_flat = inf_rates_val.reshape(-1, n_d_true)
-
-    else:
-        inf_rates_train_flat = inf_rates_train
-        inf_rates_val_flat = inf_rates_val
-
-    inf_logrates_train_flat = np.log(inf_rates_train_flat)
-    inf_logrates_val_flat = np.log(inf_rates_val_flat)
-
-    pca_logrates = PCA()
-    pca_logrates.fit(inf_logrates_train_flat)
-    inf_logrates_train_flat = pca_logrates.transform(inf_logrates_train_flat)
-    inf_logrates_val_flat = pca_logrates.transform(inf_logrates_val_flat)
-
-    pca_lats = PCA()
-    pca_lats.fit(inf_latents_train_flat)
-    inf_latents_train_flat = pca_lats.transform(inf_latents_train_flat)
-    inf_latents_val_flat = pca_lats.transform(inf_latents_val_flat)
-
-    reg = LinearRegression().fit(inf_logrates_train_flat, inf_latents_train_flat)
-    preds = reg.predict(inf_logrates_val_flat)
-
-    if noise_level is not None:
-        noised_rates_flat = (
-            np.exp(inf_logrates_val_flat)
-            + np.random.randn(*inf_logrates_val_flat.shape) * noise_level
-        )
-        rectified_noised_rates_flat = np.maximum(noised_rates_flat, 1e-5)
-        noised_logrates_flat = np.log(rectified_noised_rates_flat)
-        latent_pred_flat = reg.predict(noised_logrates_flat)
-        return r2_score(
-            inf_latents_val_flat, latent_pred_flat, multioutput="variance_weighted"
-        )
-    else:
-
-        return r2_score(inf_latents_val_flat, preds, multioutput="variance_weighted")
-
-
 def get_cycle_consistency(
     inf_latents_train,
     inf_rates_train,
