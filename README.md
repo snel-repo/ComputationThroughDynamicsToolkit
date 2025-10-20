@@ -1,10 +1,10 @@
-# Computation-Through-Dynamics Benchmark
+# Computation-Through-Dynamics Toolkit
 
 ## Overview
-This git repo contains code that will allow users to perform three steps:
-1. Choose a synthetic neural dataset to train on: (3BFF, MultiTask, RandomTarget)
-3. Train data-trained models on the synthetic spiking activity
-4. Compare the dynamics of the task-trained and data-trained networks with a variety of quantifications of dynamical accuracy
+This git repo contains code that will allow users to:
+1. Select a synthetic neural dataset: (3BFF, PhaseCodedMemory, MultiTask, RandomTarget)
+3. Train data-driven models on the synthetic spiking activity
+4. Compare the dynamics of the task-trained and data-driven models with a variety of performance metrics
 
 ## Installation
 We recommend using Conda to run this code. Unfortunately, Ray support for Windows is spotty, so I recommend Linux (or Windows Subsystem for Linux).
@@ -12,16 +12,16 @@ We recommend using Conda to run this code. Unfortunately, Ray support for Window
 To create an environment and install the dependencies of the project, run the following commands:
 
 ```
-git clone https://github.com/snel-repo/ComputationThroughDynamicsBenchmark.git
+git clone https://github.com/snel-repo/ComputationThroughDynamicsToolkit.git
 conda create --name CtDEnv python=3.10
 conda activate CtDEnv
-cd ComputationThroughDynamicsBenchmark
+cd ComputationThroughDynamicsToolkit
 pip install -e .
 
 ```
 Second, navigate to the .env file and modify HOME_DIR to the path where you cloned the environment.
 
-Included in CtdB are three primary external packages:
+Included in CtdToolkit are three primary external packages:
 
 Dynamical Similarity Analysis:
 https://github.com/mitchellostrow/DSA
@@ -68,7 +68,7 @@ Once run_data_training.py is complete, it will save a trained model and the data
 
 After both task-trained and data-trained models have been run, modify the dd_path and tt_path in compare_tt_dd_models.py to plot some basic comparisons and fixed-point analyses on the trained models!
 
-## Overview of major components:
+## Overview of major components of CtDToolkit:
 ### Task-Training:
 To see what tasks can specifically be implemented, look in the config files for the task trained networks. Each task is a "task_env" object, which specifies the default parameters for that task. These parameters can be modified by changing the "SEARCH_SPACE" variable in run_task_training.
 
