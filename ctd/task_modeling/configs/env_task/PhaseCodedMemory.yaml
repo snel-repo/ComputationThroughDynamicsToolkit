@@ -1,0 +1,7 @@
+_target_: ctd.task_modeling.task_env.phase_coded_memory.PhaseCodedMemory
+dataset_name: PhaseCodedMemory
+n_timesteps: 400
+noise: 0.2
+post_stim_l2_weight: 0.0
+lat_l2_full: False
+pred_loss_full: False

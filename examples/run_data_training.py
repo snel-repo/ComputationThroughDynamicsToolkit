@@ -25,11 +25,11 @@ LOCAL_MODE = False
 OVERWRITE = True
 WANDB_LOGGING = True  # If users have a WandB account
 
-RUN_DESC = "3BFF_NODE_sweep"  # Description of the run
+RUN_DESC = "PCM_LFADS_test"  # Description of the run
 NUM_SAMPLES = 1
-MODEL_CLASS = "SAE"  # "LFADS" or "SAE"
-MODEL = "NODE"  # see /ctd/data_modeling/configs/models/{MODEL_CLASS}/ for options
-DATA = "NBFF"  # "NBFF", "RandomTarget" or "MultiTask
+MODEL_CLASS = "LFADS"  # "LFADS" or "SAE"
+MODEL = "LFADS"  # see /ctd/data_modeling/configs/models/{MODEL_CLASS}/ for options
+DATA = "PhaseCodedMemory"  # "NBFF", "RandomTarget" or "MultiTask
 INFER_INPUTS = False  # Whether external inputs are inferred or supplied
 
 if DATA == "NBFF":
@@ -38,6 +38,8 @@ elif DATA == "MultiTask":
     prefix = "tt_MultiTask"
 elif DATA == "RandomTarget":
     prefix = "tt_RandomTarget"
+elif DATA == "PhaseCodedMemory":
+    prefix = "tt_PhaseCodedMemory"
 
 # -------------------------------------
 # Hyperparameter sweeping:
@@ -45,9 +47,9 @@ elif DATA == "RandomTarget":
 # -------------------------------------
 SEARCH_SPACE = {
     "datamodule.prefix": tune.grid_search([prefix]),
-    "model.latent_size": tune.grid_search([3, 5, 8, 16, 32, 64]),
+    # "model.latent_size": tune.grid_search([3, 5, 8, 16, 32, 64]),
     "trainer.max_epochs": tune.grid_search([1000]),
-    "params.seed": tune.grid_search([0, 1, 2, 3, 4]),
+    # "params.seed": tune.grid_search([0, 1, 2, 3, 4]),
 }
 
 # -----------------Default Parameter Sets -----------------------------------

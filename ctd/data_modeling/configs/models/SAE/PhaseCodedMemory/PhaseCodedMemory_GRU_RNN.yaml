@@ -1,0 +1,15 @@
+_target_: ctd.data_modeling.models.SAE.gru_rnn.GRULatentSAE
+dataset: NBFF
+
+encoder_size: 100
+encoder_window: -1
+
+heldin_size: 50
+heldout_size: 60
+latent_size: 128
+input_size: 3
+
+weight_decay: 0
+lr: 2e-3
+
+dropout: 0.05

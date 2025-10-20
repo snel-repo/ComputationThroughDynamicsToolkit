@@ -10,7 +10,7 @@ def compute_l2_penalty(lfads, hps):
         ]
         for param in lfads.readout.parameters():
             recurrent_kernels_and_weights.append((param, hps.l2_readout_scale))
-    elif hps.gen_type == "NODE":
+    elif hps.gen_type == "NODE" or hps.gen_type == "S2S_NODE":
         recurrent_kernels_and_weights = [
             (lfads.encoder.ic_enc.fwd_gru.cell.weight_hh, hps.l2_ic_enc_scale),
             (lfads.encoder.ic_enc.bwd_gru.cell.weight_hh, hps.l2_ic_enc_scale),

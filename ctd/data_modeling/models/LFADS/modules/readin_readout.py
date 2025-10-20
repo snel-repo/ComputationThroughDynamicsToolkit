@@ -1,5 +1,6 @@
 import math
 
+import geotorch
 import torch
 from torch import nn
 
@@ -29,6 +30,18 @@ class MLP(nn.Module):
             x = torch.relu(layer(x))
         x = self.output_layer(x)
         return x
+
+
+class StiefelLinear(nn.Module):
+    def __init__(self, in_features, out_features, use_bias=True):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features, bias=use_bias)
+        geotorch.orthogonal(
+            self.linear, "weight"
+        )  # Constrain weight to Stiefel manifold
+
+    def forward(self, x):
+        return self.linear(x)
 
 
 # class PCRInitModuleList(nn.ModuleList):

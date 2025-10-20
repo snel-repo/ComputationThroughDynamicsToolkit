@@ -1,0 +1,21 @@
+model_checkpoint:
+  _target_: pytorch_lightning.callbacks.ModelCheckpoint
+  dirpath: "."
+  monitor: valid/loss
+  save_last: True
+
+tune_report_callback:
+  _target_: ray.tune.integration.pytorch_lightning.TuneReportCallback
+  metrics:
+    loss: valid/loss
+
+latent_traj_callback:
+  _target_: ctd.task_modeling.callbacks.callbacks.LatentTrajectoryPlot
+  log_every_n_epochs: 10
+
+phase_coded_mem_callback:
+  _target_: ctd.task_modeling.callbacks.callbacks.PhaseCodedMemoryCallback
+  log_every_n_epochs: 10
+# phase_rate_code_cb:
+#   _target_: ctd.task_modeling.callbacks.callbacks.PhaseVsRateCodingCallback
+#   log_every_n_epochs: 10

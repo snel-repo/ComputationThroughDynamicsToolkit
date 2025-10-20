@@ -1,0 +1,5 @@
+_target_: ctd.task_modeling.datamodule.task_datamodule.TaskDataModule
+n_samples: 5000
+seed: 0
+batch_size: 128
+num_workers: 4

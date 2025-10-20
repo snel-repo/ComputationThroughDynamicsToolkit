@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from .initializers import init_linear_
-from .recurrent import ClippedGRUCell
+from .recurrent import ClippedGRUCell, ClippedNODECell, ClippedS2SNODECell
 
 
 class KernelNormalizedLinear(nn.Linear):
@@ -17,9 +17,26 @@ class DecoderCell(nn.Module):
         super().__init__()
         self.hparams = hps = hparams
         # Create the generator
-        self.gen_cell = ClippedGRUCell(
-            hps.ext_input_dim + hps.co_dim, hps.gen_dim, clip_value=hps.cell_clip
-        )
+        if self.hparams.gen_type == "RNN":
+            self.gen_cell = ClippedGRUCell(
+                hps.ext_input_dim + hps.co_dim, hps.gen_dim, clip_value=hps.cell_clip
+            )
+        elif self.hparams.gen_type == "NODE":
+            self.gen_cell = ClippedNODECell(
+                hps.ext_input_dim + hps.co_dim,
+                hps.gen_dim,
+                hidden_size=128,
+                num_layers=2,
+                clip_value=hps.cell_clip,
+            )
+        elif self.hparams.gen_type == "S2S_NODE":
+            self.gen_cell = ClippedS2SNODECell(
+                hps.ext_input_dim + hps.co_dim,
+                hps.gen_dim,
+                hidden_size=128,
+                num_layers=2,
+                clip_value=hps.cell_clip,
+            )
         # Create the mapping from generator states to factors
         self.fac_linear = KernelNormalizedLinear(hps.gen_dim, hps.fac_dim, bias=False)
         init_linear_(self.fac_linear)

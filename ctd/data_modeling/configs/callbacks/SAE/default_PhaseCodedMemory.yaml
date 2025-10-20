@@ -11,24 +11,20 @@ tune_report_callback:
 
 raster_plot_callback:
   _target_: ctd.data_modeling.callbacks.SAE.sim_callbacks.RasterPlot
-  log_every_n_epochs: 100
+  log_every_n_epochs: 10
 
 trajectory_plot_callback:
   _target_: ctd.data_modeling.callbacks.SAE.sim_callbacks.TrajectoryPlot
-  log_every_n_epochs: 100
+  log_every_n_epochs: 10
 
 trajectory_callback:
   _target_: ctd.data_modeling.callbacks.SAE.sim_callbacks.TrajectoryPlotOverTimeCallback
-  log_every_n_epochs: 100
-
-avg_firing_rate_callback:
-  _target_: ctd.data_modeling.callbacks.SAE.sim_callbacks.AvgFiringRateCallback
-  log_every_n_epochs: 100
+  log_every_n_epochs: 10
 
 inputs_plot:
   _target_: ctd.data_modeling.callbacks.SAE.sim_callbacks.InputsPlot
-  log_every_n_epochs: 100
+  log_every_n_epochs: 10
 
 dt_metrics:
   _target_: ctd.data_modeling.callbacks.SAE.sim_callbacks.DTMetricsCallback
-  log_every_n_epochs: 100
+  log_every_n_epochs: 10

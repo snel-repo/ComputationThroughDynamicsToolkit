@@ -1,0 +1,6 @@
+_target_: ctd.task_modeling.model.node.NODE_ICs
+latent_size: 3
+layer_hidden_size: 128
+num_layers: 3
+ic_size: 3
+gain_val: 0.01

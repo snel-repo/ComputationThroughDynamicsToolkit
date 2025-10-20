@@ -1,0 +1,7 @@
+_target_: ctd.task_modeling.model.rnn.OscRNN
+latent_size: 512
+oscillatory_init: True
+osc_real: 1.05
+osc_imag: 0.05
+noise_scale: 0.0
+latent_ic_var: 0.0

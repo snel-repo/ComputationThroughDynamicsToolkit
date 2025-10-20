@@ -176,7 +176,7 @@ class NoisyGRU_LatentL2(nn.Module):
 
     def model_loss(self, loss_dict):
         latents = loss_dict["latents"]
-        lats_flat = latents.view(latents.shape[0], -1)
+        lats_flat = latents.view(-1, latents.shape[-1])
         latent_l2_loss = self.l2_wt * torch.norm(lats_flat, p=2, dim=1).mean()
         return latent_l2_loss
 

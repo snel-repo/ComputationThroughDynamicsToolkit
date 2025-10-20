@@ -1,0 +1,21 @@
+_target_: ctd.data_modeling.datamodules.LFADS.datamodule.BasicDataModule
+prefix: tt_PhaseCodedMemory
+
+seed: 0
+batch_size: 1000
+provide_inputs: True
+
+neuron_dict:
+  n_heldin: 500
+  n_heldout: 100
+embed_dict:
+  rect_func: exp
+  fr_scaling: 100.0
+noise_dict:
+  obs_noise: pseudoPoisson
+  dispersion: 1.0
+
+batch_keys:
+  - inputs
+  - latents
+  - activity

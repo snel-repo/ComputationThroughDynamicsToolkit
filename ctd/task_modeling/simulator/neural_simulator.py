@@ -5,6 +5,94 @@ import numpy as np
 import torch
 
 
+def softplus(x):
+    return np.log1p(np.exp(x))
+
+
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+
+def solve_softplus_bias(z_col, target, eps=1e-12, tol=1e-6, max_iter=100):
+    """
+    Solve for b in mean(softplus(z + b)) = target for a single neuron column.
+    """
+    # initial guess via ratio heuristic
+    mean_sp = softplus(z_col).mean()
+    b = np.log(np.clip(target / (mean_sp + eps), a_min=eps, a_max=None))
+
+    for _ in range(max_iter):
+        shifted = z_col + b
+        current = softplus(shifted).mean()
+        error = current - target
+        if abs(error) < tol:
+            break
+        grad = sigmoid(shifted).mean()
+        if grad < eps:
+            grad = eps
+        delta = error / grad
+        b -= 0.5 * delta  # damped Newton
+    return b
+
+
+def fit_poisson_rates_from_latents(
+    latents,  # (B, T, N) numpy array
+    target_mean_rates,  # scalar or (N,) desired per-bin rate
+    link="exp",  # "exp" or "softplus"
+    eps=1e-12,
+):
+    """
+    Returns:
+      rates: (B, T, N) after applying link (λ)
+      biases: (N,) additive per-neuron bias b
+      prelink: (B, T, N) the value z + b before link function
+        (so exp(prelink) or softplus(prelink))
+    """
+    B, T, N = latents.shape
+
+    # Broadcast scalar target to vector if needed
+    if np.isscalar(target_mean_rates):
+        target_mean_rates = np.full((N,), float(target_mean_rates), dtype=latents.dtype)
+    else:
+        target_mean_rates = np.asarray(target_mean_rates, dtype=latents.dtype).reshape(
+            -1
+        )
+        if target_mean_rates.size == 1:
+            target_mean_rates = np.full(
+                (N,), target_mean_rates.item(), dtype=latents.dtype
+            )
+        elif target_mean_rates.size != N:
+            raise ValueError(
+                f"t_m_r must be sc or len {N}, got {target_mean_rates.shape}"
+            )
+
+    z = latents.reshape(-1, N)  # (M, N)
+    prelink = np.zeros_like(z)
+    rates = np.zeros_like(z)
+    biases = np.zeros(N, dtype=z.dtype)
+
+    if link == "exp":
+        mean_expz = np.exp(z).mean(axis=0)  # (N,)
+        safe_target = np.clip(target_mean_rates, a_min=eps, a_max=None)
+        biases = np.log(safe_target / (mean_expz + eps))
+        prelink = z + biases[None, :]  # (M, N)
+        rates = np.exp(prelink)
+    elif link == "softplus":
+        for n in range(N):
+            col = z[:, n]
+            target = target_mean_rates[n]
+            b_n = solve_softplus_bias(col, target, eps=eps)
+            biases[n] = b_n
+            prelink[:, n] = col + b_n
+            rates[:, n] = softplus(prelink[:, n])
+    else:
+        raise ValueError(f"Unknown link '{link}'; use 'exp' or 'softplus'.")
+
+    rates = rates.reshape(B, T, N)
+    prelink = prelink.reshape(B, T, N)
+    return rates, biases, prelink
+
+
 def generate_samples(activity, index_of_dispersion, rng):
     """
     Generate samples from a distribution with a specified
@@ -179,15 +267,27 @@ class NeuralDataSimulator:
 
         # Get the first n_neurons indices and permute the latents
         n_times_cut = activity.shape[1]
-
-        # Standardize and record original mean and standard deviations
-        if not self.frozen_params:
+        if (
+            "target_mean_rates" in self.embed_dict
+            and self.embed_dict["target_mean_rates"] is not None
+        ):
+            # Fit rates to target mean rates
+            _, _, activity = fit_poisson_rates_from_latents(
+                latents_perm,
+                self.embed_dict["target_mean_rates"],
+                link=self.embed_dict["rect_func"],
+            )
             self.orig_mean = np.mean(activity, keepdims=True)
             self.orig_std = np.std(activity, keepdims=True)
+        # Standardize and record original mean and standard deviations
+        else:
+            if not self.frozen_params:
+                self.orig_mean = np.mean(activity, keepdims=True)
+                self.orig_std = np.std(activity, keepdims=True)
 
-        activity = (activity - self.orig_mean) / (
-            self.embed_dict["fr_scaling"] * self.orig_std
-        )
+            activity = (activity - self.orig_mean) / (
+                self.embed_dict["fr_scaling"] * self.orig_std
+            )
 
         # Step 3: Apply rectification to positive "rates"
         if self.embed_dict["rect_func"] == "sigmoid":

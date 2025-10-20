@@ -1,19 +1,19 @@
 _target_: ctd.data_modeling.models.SAE.node.NODELatentSAE
-dataset: RandomTarget
+dataset: NBFF
 
 encoder_size: 100
 encoder_window: -1
 
-heldin_size: 50
-heldout_size: 60
-latent_size: 10
-input_size: 17
+heldin_size: 500
+heldout_size: 600
+latent_size: 3
+input_size: 3
 
 dropout: 0.05
 
 vf_hidden_size: 128
 vf_num_layers: 6
 
-lr: 2e-3
+lr: 1e-3
 
-weight_decay: 1e-7
+weight_decay: 0

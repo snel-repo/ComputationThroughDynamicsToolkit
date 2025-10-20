@@ -142,6 +142,8 @@ class TaskTrainedWrapper(pl.LightningModule):
         # Step 2: If the model has functionality to reset the hidden state, do so
         if hasattr(self.model, "init_hidden"):
             hidden = self.model.init_hidden(batch_size=batch_size).to(self.device)
+        elif hasattr(self.model, "init_hidden_from_ic"):
+            hidden = self.model.init_hidden_from_ic(ics).to(self.device)
         else:
             hidden = torch.zeros(batch_size, self.latent_size).to(self.device)
 
@@ -260,7 +262,9 @@ class TaskTrainedWrapper(pl.LightningModule):
         loss_all = self.loss_func(loss_dict)
         # Step 4: If the model itself has has a loss function, add its contribution
         if hasattr(self.model, "model_loss"):
-            loss_all += self.model.model_loss(loss_dict)
+            model_loss = self.model.model_loss(loss_dict)
+            self.log("train/model_loss", model_loss)
+            loss_all += model_loss
         self.log("train/loss", loss_all)
         return loss_all
 
@@ -310,6 +314,8 @@ class TaskTrainedWrapper(pl.LightningModule):
 
         # Step 4: Compute the loss using the loss function object
         if hasattr(self.model, "model_loss"):
-            loss_all += self.model.model_loss(loss_dict)
+            model_loss = self.model.model_loss(loss_dict)
+            self.log("valid/model_loss", model_loss)
+            loss_all += model_loss
         self.log("valid/loss", loss_all)
         return loss_all

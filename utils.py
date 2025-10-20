@@ -10,7 +10,7 @@ def generate_paths(RUN_DESC: str, TASK: str, MODEL: str):
     paths = dict(
         tt_datasets=HOME_DIR / "content" / "datasets" / "tt",
         sim_datasets=HOME_DIR / "content" / "datasets" / "sim",
-        dt_datasets=HOME_DIR / "content" / "datasets" / "dt",
+        dt_datasets=HOME_DIR / "content" / "datasets" / "dd",
         trained_models=HOME_DIR / "content" / "trained_models",
     )
     for key, val in paths.items():

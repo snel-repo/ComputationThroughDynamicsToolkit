@@ -1,0 +1,104 @@
+_target_: ctd.data_modeling.models.LFADS.lfads.LFADS
+
+# --------- architecture --------- #
+gen_type: NODE
+inv_encoder: False
+encod_data_dim: 50
+encod_seq_len: 150
+recon_seq_len: 150
+recon_data_dim: 60
+ext_input_dim: 17 # Ext. Inputs
+ic_enc_seq_len: 0
+ic_enc_dim: 128 # Encoder for latent ICs hidden units
+ci_enc_dim: 0 # Controller encoder dimensionality
+ci_lag: 1
+con_dim: 0 # Hidden size of controller
+co_dim: 0 # # of controller inputs
+ic_dim: 20 # # neurons if Flow_inv, gen_dim if not
+gen_dim: 20
+fac_dim: 20
+
+# --------- readin / readout --------- #
+readin:
+  - _target_: torch.nn.Identity
+readout:
+  - _target_: ctd.data_modeling.models.LFADS.modules.readin_readout.FanInLinear
+    in_features: ${fac_dim}
+    out_features: ${recon_data_dim}
+# readout:
+#   - _target_: ctd.data_modeling.models.LFADS.modules.readin_readout.Flow
+#     in_features: ${fac_dim}
+#     out_features: 50
+#     readout_num_layers: 3
+#     readout_hidden_size: 128
+#     flow_num_steps: 25
+# --------- augmentation --------- #
+train_aug_stack:
+  _target_: ctd.data_modeling.models.LFADS.modules.augmentations.AugmentationStack
+  transforms:
+    - _target_: ctd.data_modeling.models.LFADS.modules.augmentations.CoordinatedDropout
+      cd_rate: 0.3
+      cd_pass_rate: 0.0
+      ic_enc_seq_len: ${ic_enc_seq_len}
+  batch_order: [0]
+  loss_order: [0]
+infer_aug_stack:
+  _target_: ctd.data_modeling.models.LFADS.modules.augmentations.AugmentationStack
+  transforms:
+    # Ignore NaNs for heldout data in test-phase validation loss
+    - _target_: ctd.data_modeling.models.LFADS.modules.augmentations.IgnoreNaNLoss
+      encod_data_dim: ${encod_data_dim}
+      encod_seq_len: ${encod_seq_len}
+      scale_by_quadrant: False
+  loss_order: [0]
+
+# --------- priors / posteriors --------- #
+reconstruction:
+  - _target_: ctd.data_modeling.models.LFADS.modules.recons.Poisson
+variational: True
+
+# Sparse input prior
+
+# Autoregressive input prior
+co_prior:
+  _target_: ctd.data_modeling.models.LFADS.modules.priors.AutoregressiveMultivariateNormal
+  tau: 10.0
+  nvar: 0.1
+  shape: ${co_dim}
+
+ic_prior:
+  _target_: ctd.data_modeling.models.LFADS.modules.priors.MultivariateNormal
+  mean: 0
+  variance: 0.1
+  shape: ${ic_dim}
+ic_post_var_min: 1.0e-4
+
+# --------- misc --------- #
+dropout_rate: 0.02 # sampled
+cell_clip: 5.0
+loss_scale: 1.0e+4
+recon_reduce_mean: True
+
+# --------- learning rate --------- #
+lr_init: 1.0e-3
+lr_stop: 1.0e-5
+lr_decay: 0.95
+lr_patience: 6
+lr_adam_beta1: 0.9
+lr_adam_beta2: 0.999
+lr_adam_epsilon: 1.0e-7
+lr_scheduler: True
+
+# --------- regularization --------- #
+weight_decay: 1.0e-5
+l2_start_epoch: 0
+l2_increase_epoch: 80
+l2_ic_enc_scale: 0.0
+l2_ci_enc_scale: 0.0
+l2_gen_scale: 0.0 # sampled
+l2_con_scale: 0.0 # sampled
+l2_readout_scale: 0
+kl_start_epoch: 0
+kl_increase_epoch: 80
+kl_ic_scale: 1.0e-6 # sampled
+kl_co_scale: 1.0e-5 # sampled

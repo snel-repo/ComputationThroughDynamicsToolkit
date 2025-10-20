@@ -7,6 +7,8 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 
 from ctd.comparison.metrics import (
+    compute_nl_cycle_consistency,
+    compute_static_rotation_invariant_mmd,
     get_bps,
     get_cycle_consistency,
     get_signal_r2,
@@ -43,8 +45,7 @@ class Comparison:
     def compute_metrics(
         self,
         ref_ind=None,
-        metric_list=["rate_r2", "state_r2"],
-        cycle_con_var=0.01,
+        metric_dict_list={},
     ):
         # Get the rates, latents, and inputs
         if ref_ind is None:
@@ -84,7 +85,7 @@ class Comparison:
             unequal_trial_lens = False
 
         metrics_dict = {"run_name": [], "group": []}
-        for metric in metric_list:
+        for metric in metric_dict_list.keys():
             metrics_dict[metric] = []
 
         # Iterate through the analyses
@@ -137,7 +138,7 @@ class Comparison:
             # Check that latents arenot NaN
             if np.isnan(inf_latents_train.detach().numpy()).any():
                 continue
-            for j, metric in enumerate(metric_list):
+            for j, metric in enumerate(metric_dict_list):
                 if metric == "rate_r2":
                     rate_r2 = get_signal_r2(
                         signal_true=true_rates_val,
@@ -145,6 +146,7 @@ class Comparison:
                     )
                     print(f"Rate R2: {rate_r2}")
                     metrics_dict["rate_r2"].append(rate_r2)
+
                 elif metric == "recon_r2":
                     recon_r2 = get_signal_r2_linear(
                         signal_true_train=true_lats_train,
@@ -154,6 +156,7 @@ class Comparison:
                     )
                     print(f"Recon R2: {recon_r2}")
                     metrics_dict["recon_r2"].append(recon_r2)
+
                 elif metric == "input_r2":
                     inf_inputs_train = self.analyses[i].get_inferred_inputs(
                         phase="train"
@@ -177,6 +180,7 @@ class Comparison:
                     )
                     print(f"Input R2: {input_r2}")
                     metrics_dict["input_r2"].append(input_r2)
+
                 elif metric in ["state_r2"]:
                     state_r2 = get_signal_r2_linear(
                         signal_true_train=true_lats_train,
@@ -186,6 +190,7 @@ class Comparison:
                     )
                     print(f"State R2: {state_r2}")
                     metrics_dict["state_r2"].append(state_r2)
+
                 elif metric in ["co-bps"]:
                     inf_rates_co = inf_rates_val[..., n_input_neurons:]
                     spiking_co = inp_spikes_val[..., n_input_neurons:]
@@ -196,6 +201,9 @@ class Comparison:
                     print(f"CO-BPS: {bps}")
                     metrics_dict["co-bps"].append(bps)
                 elif metric in ["cycle_con"]:
+                    cycle_con_var = metric_dict_list[metric].get(
+                        "variance_threshold", 0.01
+                    )
                     linear_cycle_con = get_cycle_consistency(
                         inf_latents_train=inf_latents_train.detach().numpy(),
                         inf_rates_train=inf_rates_train.detach().numpy(),
@@ -205,6 +213,64 @@ class Comparison:
                     )
                     print(f"Cycle Consistency R2: {linear_cycle_con}")
                     metrics_dict["cycle_con"].append(linear_cycle_con)
+                elif metric in ["nl_cycle_con"]:
+                    hidden_sizes = metric_dict_list[metric].get(
+                        "mlp_hidden_layers", [64, 64]
+                    )
+                    lr = metric_dict_list[metric].get("lr", 1e-3)
+                    max_epochs = metric_dict_list[metric].get("max_epochs", 1000)
+                    patience = metric_dict_list[metric].get("patience", 50)
+                    min_delta = metric_dict_list[metric].get("min_delta", 1e-5)
+                    noise_stds = metric_dict_list[metric].get(
+                        "noise_stds", [0, 0.01, 0.05, 0.1]
+                    )
+                    weight_decay = metric_dict_list[metric].get("weight_decay", 1e-4)
+                    device = metric_dict_list[metric].get(
+                        "device", "cuda" if torch.cuda.is_available() else "cpu"
+                    )
+
+                    nl_cycle_con = compute_nl_cycle_consistency(
+                        inf_latents_train=inf_latents_train.detach().numpy(),
+                        inf_rates_train=inf_rates_train.detach().numpy(),
+                        inf_latents_val=inf_latents_val.detach().numpy(),
+                        inf_rates_val=inf_rates_val.detach().numpy(),
+                        hidden_sizes=hidden_sizes,
+                        lr=lr,
+                        max_epochs=max_epochs,
+                        patience=patience,
+                        min_delta=min_delta,
+                        noise_stds=noise_stds,
+                        weight_decay=weight_decay,
+                        device=device,
+                    )
+                    print(f"Nonlinear Cycle Consistency R2: {nl_cycle_con}")
+                    metrics_dict["nl_cycle_con"].append(nl_cycle_con)
+
+                elif metric in ["mmd"]:
+                    feature_types = metric_dict_list[metric].get(
+                        "feature_types", ["pairwise", "spectral", "distances"]
+                    )
+                    max_pairwise_samples = metric_dict_list[metric].get(
+                        "max_pairwise_samples", 1000
+                    )
+                    mmd = compute_static_rotation_invariant_mmd(
+                        x_true=true_lats_val.detach().numpy(),
+                        x_pred=inf_latents_val.detach().numpy(),
+                        feature_types=feature_types,
+                        max_pairwise_samples=max_pairwise_samples,
+                    )
+                    print(f"MMD: {mmd}")
+                    metrics_dict["mmd"].append(mmd)
+
+                elif metric in ["lyapunov"]:
+                    lyap_mean, lyap_std = self.analyses[i].compute_lyapunov_exp()
+                    lyap_mean = lyap_mean.detach().numpy()
+                    lyap_std = lyap_std.detach().numpy()
+                    print(
+                        f"Lyapunov Exponent: {lyap_mean[0]:.6f} +/- {lyap_std[0]:.6f}"
+                    )
+                    metrics_dict["lyapunov"].append(lyap_mean)
+
                 else:
                     raise ValueError("Invalid metric")
 

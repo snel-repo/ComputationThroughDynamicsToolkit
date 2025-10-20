@@ -7,6 +7,8 @@ from typing import List
 import hydra
 import pytorch_lightning as pl
 from gymnasium import Env
+from omegaconf import OmegaConf
+from pytorch_lightning.loggers import WandbLogger
 
 from utils import flatten
 
@@ -102,18 +104,19 @@ def train(
         config_all["env_sim"][k.split(".")[1]] = v
 
     # Order of operations:
-    # 1. Instantiate environments
+
+    # 1. Instantiate loggers and log HPs
+    # 2. Instantiate environments
     #    - task_env is for training
     #    - sim_env is for simulating the neural data
-    # 2. Instantiate model
+    # 3. Instantiate model
     #    - init_model with the correct input and output sizes
-    # 3. Instantiate task-wrapper
+    # 4. Instantiate task-wrapper
     #    - Set wrapper environment and model
-    # 4. Instantiate training datamodule
+    # 5. Instantiate training datamodule
     #    - Set datamodule environment
-    # 5. Instantiate simulator
-    # 6. Instantiate callbacks
-    # 7. Instantiate loggers
+    # 6. Instantiate simulator
+    # 7. Instantiate callbacks
     # 8. Instantiate trainer
     # 9. Train model
     # 10. Save model + datamodule
@@ -121,7 +124,45 @@ def train(
     # 12. Simulate neural data
     # 13. Save simulator + sim datamodule
 
-    # -----Step 1:----------------Instantiate environments----------------------------
+    # -----Step 1:------Instantiate loggers and log HPs----------------
+
+    flat_list = flatten(overrides).items()
+    run_list = []
+    for k, v in flat_list:
+        if type(v) == float:
+            v = "{:.2E}".format(v)
+        k_list = k.split(".")
+        run_list.append(f"{k_list[-1]}={v}")
+    run_name = "_".join(run_list)
+
+    logger: List[pl.LightningLoggerBase] = []
+    if "loggers" in config_all:
+        for _, lg_conf in config_all["loggers"].items():
+            if "_target_" in lg_conf:
+                log.info(f"Instantiating logger <{lg_conf._target_}>")
+                if lg_conf._target_ == "pytorch_lightning.loggers.WandbLogger":
+                    lg_conf["group"] = run_tag
+                    lg_conf["name"] = run_name
+                    logger.append(hydra.utils.instantiate(lg_conf, log_model=False))
+                else:
+                    logger.append(hydra.utils.instantiate(lg_conf))
+
+    # --- assemble a pure‐python hyperparam dict from each OmegaConf config ---
+    hparams = {}
+    for key, cfg in config_all.items():
+        # cfg is an OmegaConf object, so this works
+        hparams[key] = OmegaConf.to_container(cfg, resolve=True)
+
+    for key, value in overrides.items():
+        hparams[key] = value
+
+    # find your WandbLogger and log them
+    for lg in logger:
+        if isinstance(lg, WandbLogger):
+            lg.log_hyperparams(hparams)
+            break
+
+    # -----Step 2:----------------Instantiate environments----------------------------
     log.info("Instantiating environment")
     task_env: Env = hydra.utils.instantiate(config_all["env_task"], _convert_="all")
 
@@ -163,26 +204,6 @@ def train(
             if "_target_" in cb_conf:
                 log.info(f"Instantiating callback <{cb_conf._target_}>")
                 callbacks.append(hydra.utils.instantiate(cb_conf, _convert_="all"))
-
-    # -----Step 7:------------------Instantiate loggers----------------------------
-    flat_list = flatten(overrides).items()
-    run_list = []
-    for k, v in flat_list:
-        if type(v) == float:
-            v = "{:.2E}".format(v)
-        k_list = k.split(".")
-        run_list.append(f"{k_list[-1]}={v}")
-    run_name = "_".join(run_list)
-
-    logger: List[pl.LightningLoggerBase] = []
-    if "loggers" in config_all:
-        for _, lg_conf in config_all["loggers"].items():
-            if "_target_" in lg_conf:
-                log.info(f"Instantiating logger <{lg_conf._target_}>")
-                if lg_conf._target_ == "pytorch_lightning.loggers.WandbLogger":
-                    lg_conf["group"] = run_tag
-                    lg_conf["name"] = run_name
-                logger.append(hydra.utils.instantiate(lg_conf))
 
     # ------Step 8:--------------Instantiate trainer---------------------------
     targ_string = config_all["trainer"]._target_

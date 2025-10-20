@@ -10,6 +10,7 @@ from sklearn.decomposition import PCA
 
 from ctd.comparison.analysis.analysis import Analysis
 from ctd.comparison.fixedpoints import find_fixed_points
+from ctd.comparison.metrics import compute_jacobians, compute_lyaps
 from ctd.data_modeling.extensions.LFADS.utils import send_batch_to_device
 
 
@@ -263,6 +264,30 @@ class Analysis_DD(ABC, Analysis):
         ax2.set_ylim(0, 105)
         plt.savefig(f"{self.run_name}_scree_plot.pdf")
         return exp_var_ext
+
+    def compute_lyapunov_exp(self, phase="val", n_trials=None):
+        # Get the latent activity
+        latents = self.get_latents(phase=phase)
+        # Get the inputs
+        inputs = self.get_inputs(phase=phase)
+        # Get the flow-field model
+        cell = self.get_dynamics_model()
+        #
+        # Compute the Jacobians
+        Jz, Ju, trial_idx = compute_jacobians(
+            z=latents,
+            u=inputs,
+            f=cell,
+            num_trials=n_trials,
+        )
+
+        # Compute the Lyapunov exponents
+        les = compute_lyaps(
+            Js=Jz,
+            dt=1,
+        )
+
+        return les.mean(0), les.std(0)
 
     @abstractmethod
     def get_model_inputs(self):

@@ -11,6 +11,7 @@ from sklearn.decomposition import PCA
 
 from ctd.comparison.analysis.analysis import Analysis
 from ctd.comparison.fixedpoints import find_fixed_points
+from ctd.comparison.metrics import compute_input_lyaps, compute_jacobians, compute_lyaps
 
 dotenv.load_dotenv(override=True)
 HOME_DIR = os.getenv("HOME_DIR")
@@ -56,12 +57,20 @@ class Analysis_TT(Analysis):
         train_ds = self.datamodule.train_ds
         valid_ds = self.datamodule.valid_ds
         tt_inputs = torch.cat([train_ds.tensors[1], valid_ds.tensors[1]], dim=0)
+
+        if self.trim_inds is not None:
+            start = self.trim_inds[0] - 1
+            end = self.trim_inds[1]
+        else:
+            start = 0
+            end = tt_inputs.shape[1]
+
         if phase == "all":
-            return tt_inputs
+            return tt_inputs[:, start:end, :]
         elif phase == "train":
-            return tt_inputs[self.train_inds]
+            return tt_inputs[self.train_inds, start:end, :]
         elif phase == "val":
-            return tt_inputs[self.valid_inds]
+            return tt_inputs[self.valid_inds, start:end, :]
 
     def get_true_inputs(self, phase="all"):
         train_ds = self.datamodule.train_ds
@@ -454,3 +463,44 @@ class Analysis_TT(Analysis):
             len_list.append(phase_dict[i]["response"][1])
 
         return len_list
+
+    def compute_lyapunov_exp(self, phase="val", n_trials=None, input_lyaps=False):
+        # Get the latent activity
+        outputs = self.get_model_outputs(phase=phase)
+        latents = outputs["latents"]
+        states = outputs["states"]
+        # Get the inputs
+        inputs = self.get_model_inputs(phase=phase)[1]
+        if states is not None:
+            combined_in = torch.cat([states, inputs], dim=-1)
+        else:
+            combined_in = inputs
+        # Get the flow-field model
+
+        if hasattr(self.wrapper.model, "generator"):
+            cell = self.wrapper.model.generator
+        else:
+            cell = self.wrapper.model.cell
+        #
+        # Compute the Jacobians
+        Jz, Ju, trial_idx = compute_jacobians(
+            z=latents,
+            u=combined_in,
+            f=cell,
+            num_trials=n_trials,
+        )
+
+        # Compute the Lyapunov exponents
+        les = compute_lyaps(
+            Js=Jz,
+            dt=1,
+        )
+        if input_lyaps:
+            # Compute the input Lyapunov exponents
+            les_u = compute_input_lyaps(
+                Jz=Jz,
+                Ju=Ju,
+                dt=1,
+            )
+            les = torch.cat((les, les_u), dim=-1)
+        return les.mean(0), les.std(0)
