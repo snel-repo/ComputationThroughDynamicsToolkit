@@ -1,0 +1,14 @@
+_target_: ctd.task_modeling.model.rnn.ChaoticRateRNN
+latent_size: 200
+recurrent_gain: 1.5
+noise_level: 0.0
+latent_ic_var: 0.5
+hidden_clip: 5.0
+alpha: 0.0333333333
+use_bias: false
+learnable_ics: false
+init_hidden_dist: uniform
+init_hidden_uniform_bound: 0.1
+input_trainable: false
+input_init_dist: uniform
+input_uniform_bound: 1.0

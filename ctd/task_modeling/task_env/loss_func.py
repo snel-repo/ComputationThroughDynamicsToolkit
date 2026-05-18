@@ -3,6 +3,14 @@ import torch
 import torch.nn as nn
 
 
+def _dnms_response_cols(extra):
+    if extra.shape[1] >= 13:
+        return 8, 9
+    if extra.shape[1] >= 11:
+        return 6, 7
+    raise ValueError(f"Unsupported DNMS extra shape: {tuple(extra.shape)}")
+
+
 class LossFunc:
     def __init__():
         pass
@@ -238,3 +246,78 @@ class MatchTargetLossIncrementalMSE(LossFunc):
         # action = loss_dict["actions"]
         # inputs = loss_dict["inputs"]
         return nn.MSELoss()(pred[:, :n_bins, :], target[:, :n_bins, :])
+
+
+class ChaoticDelayedMemoryLoss(LossFunc):
+    """Response-window mean MSE for ChaoticDelayedMemory.
+
+    Expects `extra` columns:
+    0 cue_on, 1 cue_off, 2 delay_on, 3 delay_off, 4 resp_on, 5 resp_off.
+    """
+
+    def __init__(
+        self,
+        response_weight: float = 5.0,
+        delay_weight: float = 1.0,
+        baseline_weight: float = 1.0,
+    ):
+        self.response_weight = response_weight
+        self.delay_weight = delay_weight
+        self.baseline_weight = baseline_weight
+
+    def __call__(self, loss_dict):
+        pred = loss_dict["controlled"]
+        target = loss_dict["targets"]
+        extra = loss_dict["extra"]
+
+        resp_on = extra[:, 4].long()
+        resp_off = extra[:, 5].long()
+
+        pred_means = []
+        target_means = []
+        for i in range(pred.shape[0]):
+            rs = int(resp_on[i].item())
+            re = int(resp_off[i].item())
+            pred_means.append(pred[i, rs:re, :].mean(dim=0))
+            target_means.append(target[i, rs:re, :].mean(dim=0))
+
+        pred_means = torch.stack(pred_means, dim=0)
+        target_means = torch.stack(target_means, dim=0)
+        return nn.MSELoss()(pred_means, target_means)
+
+
+class ChaoticDelayedMatchingLoss(LossFunc):
+    """MAE on the response-window mean for a single-neuron DNMS readout.
+
+    Expects `extra` columns:
+    0 cue1_on, 1 cue1_off, 2 delay1_on, 3 delay1_off,
+    4 cue2_on, 5 cue2_off, 6 delay2_on, 7 delay2_off,
+    8 resp_on, 9 resp_off.
+    """
+
+    def __init__(self):
+        pass
+
+    def __call__(self, loss_dict):
+        pred = loss_dict["controlled"]
+        target = loss_dict["targets"]
+        extra = loss_dict["extra"]
+
+        resp_on_col, resp_off_col = _dnms_response_cols(extra)
+        resp_on = extra[:, resp_on_col].long()
+        resp_off = extra[:, resp_off_col].long()
+
+        if pred.shape[-1] != 1 or target.shape[-1] != 1:
+            raise ValueError("Loss expects single-neuron preds and targs.")
+
+        pred_means = []
+        target_means = []
+        for i in range(pred.shape[0]):
+            rs = int(resp_on[i].item())
+            re = int(resp_off[i].item())
+            pred_means.append(pred[i, rs:re, 0].mean())
+            target_means.append(target[i, rs:re, 0].mean())
+
+        pred_means = torch.stack(pred_means, dim=0)
+        target_means = torch.stack(target_means, dim=0)
+        return nn.L1Loss()(pred_means, target_means)

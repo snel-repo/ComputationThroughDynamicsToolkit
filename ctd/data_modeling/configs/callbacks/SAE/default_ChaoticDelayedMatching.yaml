@@ -1,0 +1,45 @@
+model_checkpoint:
+  _target_: pytorch_lightning.callbacks.ModelCheckpoint
+  dirpath: "."
+  monitor: valid/loss_all
+  save_last: True
+
+tune_report_callback:
+  _target_: ray.tune.integration.pytorch_lightning.TuneReportCallback
+  metrics:
+    loss: valid/loss_all
+
+raster_plot_callback:
+  _target_: ctd.data_modeling.callbacks.SAE.sim_callbacks.RasterPlot
+  log_every_n_epochs: 10
+
+trajectory_plot_callback:
+  _target_: ctd.data_modeling.callbacks.SAE.sim_callbacks.TrajectoryPlot
+  log_every_n_epochs: 10
+
+trajectory_callback:
+  _target_: ctd.data_modeling.callbacks.SAE.sim_callbacks.TrajectoryPlotOverTimeCallback
+  log_every_n_epochs: 10
+
+inputs_plot:
+  _target_: ctd.data_modeling.callbacks.SAE.sim_callbacks.InputsPlot
+  log_every_n_epochs: 10
+
+dt_metrics:
+  _target_: ctd.data_modeling.callbacks.SAE.sim_callbacks.DTMetricsCallback
+  log_every_n_epochs: 10
+
+chaos_lyapunov:
+  _target_: ctd.data_modeling.callbacks.SAE.sim_callbacks.ChaoticDelayedMatchingLyapunovCallback
+  log_every_n_epochs: 10
+
+early_stopping:
+  _target_: pytorch_lightning.callbacks.EarlyStopping
+  monitor: valid/loss_all
+  mode: min
+  patience: 200
+  min_delta: 0
+
+learning_rate_monitor:
+  _target_: pytorch_lightning.callbacks.LearningRateMonitor
+  logging_interval: epoch

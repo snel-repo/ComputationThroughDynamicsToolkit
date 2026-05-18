@@ -7,6 +7,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 
 from ctd.comparison.metrics import (
+    compute_delay_embedding_distribution_metric,
     compute_nl_cycle_consistency,
     compute_static_rotation_invariant_mmd,
     get_bps,
@@ -83,6 +84,17 @@ class Comparison:
 
         else:
             unequal_trial_lens = False
+            trial_lens_train = None
+            trial_lens_val = None
+
+        def trim_trials(array, trial_lens):
+            if not unequal_trial_lens:
+                return array
+
+            trimmed = []
+            for trial_ind, trial_len in enumerate(trial_lens):
+                trimmed.append(array[trial_ind, : int(trial_len), :])
+            return torch.concatenate(trimmed)
 
         metrics_dict = {"run_name": [], "group": []}
         for metric in metric_dict_list.keys():
@@ -190,6 +202,62 @@ class Comparison:
                     )
                     print(f"State R2: {state_r2}")
                     metrics_dict["state_r2"].append(state_r2)
+
+                elif metric in [
+                    "delay_embed_dist",
+                    "kl_geometry",
+                    "wasserstein_geometry",
+                ]:
+                    metric_cfg = dict(metric_dict_list[metric])
+                    if metric == "kl_geometry":
+                        metric_cfg.setdefault("distance_metric", "kl")
+                    elif metric == "wasserstein_geometry":
+                        metric_cfg.setdefault("distance_metric", "wasserstein")
+
+                    input_source = metric_cfg.get("input_source", "latents")
+                    if input_source == "latents":
+                        true_train = true_lats_train
+                        true_val = true_lats_val
+                        pred_train = inf_latents_train
+                        pred_val = inf_latents_val
+                    elif input_source == "rates":
+                        true_rates_train = self.analyses[i].get_true_rates(
+                            phase="train"
+                        )
+                        true_rates_val_metric = self.analyses[i].get_true_rates(
+                            phase="val"
+                        )
+                        true_train = trim_trials(true_rates_train, trial_lens_train)
+                        true_val = trim_trials(true_rates_val_metric, trial_lens_val)
+                        pred_train = inf_rates_train
+                        pred_val = inf_rates_val
+                    elif input_source == "spikes":
+                        inp_spikes_train = self.analyses[i].get_spiking(phase="train")
+                        inp_spikes_val_metric = self.analyses[i].get_spiking(
+                            phase="val"
+                        )
+                        true_train = trim_trials(inp_spikes_train, trial_lens_train)
+                        true_val = trim_trials(inp_spikes_val_metric, trial_lens_val)
+                        pred_train = inf_rates_train
+                        pred_val = inf_rates_val
+                    else:
+                        raise ValueError(
+                            f"Unsupported input_source '{input_source}' for {metric}."
+                        )
+
+                    geometry_score = compute_delay_embedding_distribution_metric(
+                        true_train=true_train,
+                        pred_train=pred_train,
+                        true_val=true_val,
+                        pred_val=pred_val,
+                        **metric_cfg,
+                    )
+                    metric_name = metric_cfg.get("distance_metric", "wasserstein")
+                    print(
+                        "Delay-Embed "
+                        f"{metric_name.title()} ({input_source}): {geometry_score}"
+                    )
+                    metrics_dict[metric].append(geometry_score)
 
                 elif metric in ["co-bps"]:
                     inf_rates_co = inf_rates_val[..., n_input_neurons:]

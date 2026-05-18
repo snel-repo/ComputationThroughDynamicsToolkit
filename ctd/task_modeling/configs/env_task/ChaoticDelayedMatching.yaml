@@ -1,0 +1,11 @@
+_target_: ctd.task_modeling.task_env.chaotic_delayed_matching.ChaoticDelayedMatching
+dataset_name: ChaoticDelayedMatching
+n_timesteps: 1050
+noise: 0.1
+cue_scale: 1.0
+baseline_range: [50, 50]
+cue1_range: [200, 200]
+delay1_range: [200, 200]
+cue2_range: [200, 200]
+delay2_range: [200, 200]
+response_range: [200, 200]

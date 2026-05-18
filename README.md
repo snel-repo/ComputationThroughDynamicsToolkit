@@ -2,7 +2,7 @@
 
 ## Overview
 This git repo contains code that will allow users to:
-1. Select a synthetic neural dataset: (3BFF, PhaseCodedMemory, MultiTask, RandomTarget)
+1. Select a synthetic neural dataset: (3BFF, PhaseCodedMemory, MultiTask, RandomTarget, ChaoticDelayedMatching)
 3. Train data-driven models on the synthetic spiking activity
 4. Compare the dynamics of the task-trained and data-driven models with a variety of performance metrics
 
@@ -47,10 +47,13 @@ The two primary run scripts are "run_task_training.py" and "run_data_training.py
 
 Each uses ray, hydra, and PyTorch Lightning to handle hyperparameter sweeps and logging. WandB is used by default, but TensorBoard logging is also available.
 
-There are three tasks implemented, ranging from simple to complex:
+There are six tasks implemented, ranging from simple to complex:
 1. NBFF: An extension of the 3-bit Flip-Flop from OTBB, this can be extended into higher dimensions for more complex dynamics.
 2. MultiTask: A version of the task used in recent papers by Yang and Driscoll, this task combines 15 simple cognitive tasks into a single task to look at how dynamical motifs can generalize.
 3. RandomTarget: A musculoskeletal modeling and control engine (MotorNet) that we use to simulate a delayed RandomTarget reaching task (Codol et al.)
+4. PhaseCodedMemory: A phase-coded working-memory benchmark with cue-dependent phase shifts.
+5. ChaoticDelayedMemory: A delayed-memory benchmark with task-relevant cue computation embedded in weakly-to-moderately chaotic latent dynamics.
+6. ChaoticDelayedMatching: A delayed non-match-to-sample benchmark with a simple chaotic or near-chaotic rate-RNN teacher and exported latent / rate / spike datasets.
 
 ## Quick-Start:
 To get an overview of the major components of the code-base, only three scripts are necessary:

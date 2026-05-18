@@ -4,6 +4,18 @@ from gymnasium import Env
 from torch import nn
 
 
+class FixedSingleNeuronReadout(nn.Module):
+    """Expose one latent unit directly as the model readout."""
+
+    def __init__(self, neuron_idx: int):
+        super().__init__()
+        self.neuron_idx = int(neuron_idx)
+
+    def forward(self, hidden: torch.Tensor) -> torch.Tensor:
+        i = self.neuron_idx
+        return hidden[:, i : i + 1]
+
+
 class TaskTrainedWrapper(pl.LightningModule):
     """Wrapper for a task trained model
 
@@ -55,6 +67,8 @@ class TaskTrainedWrapper(pl.LightningModule):
         self.output_size = output_size
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
+        self._single_neuron_readout_idx = None
+        self._default_model_readout = None
 
         self.save_hyperparameters()
 
@@ -75,11 +89,42 @@ class TaskTrainedWrapper(pl.LightningModule):
             self.dynamic_noise = task_env.dynamic_noise
         else:
             self.dynamic_noise = 0.0
+        self._single_neuron_readout_idx = None
+        self._configure_model_readout()
 
     def set_model(self, model: nn.Module):
         """Set the model for the training pipeline"""
         self.model = model
         self.latent_size = model.latent_size
+        self._single_neuron_readout_idx = None
+        self._default_model_readout = model.readout
+        self._configure_model_readout()
+
+    def _get_single_neuron_readout_idx(self) -> int:
+        if self._single_neuron_readout_idx is None:
+            if self.output_size != 1:
+                raise ValueError(
+                    "single_neuron_readout currently supports output_size == 1"
+                )
+            latent_size = self.model.latent_size
+            readout_seed = getattr(self.task_env, "readout_seed", None)
+            if readout_seed is None:
+                idx = torch.randint(0, latent_size, (1,)).item()
+            else:
+                gen = torch.Generator()
+                gen.manual_seed(int(readout_seed))
+                idx = torch.randint(0, latent_size, (1,), generator=gen).item()
+            self._single_neuron_readout_idx = int(idx)
+        return self._single_neuron_readout_idx
+
+    def _configure_model_readout(self):
+        if self.model is None or self.task_env is None:
+            return
+        if getattr(self.task_env, "single_neuron_readout", False):
+            idx = self._get_single_neuron_readout_idx()
+            self.model.readout = FixedSingleNeuronReadout(idx)
+        elif self._default_model_readout is not None:
+            self.model.readout = self._default_model_readout
 
     def configure_optimizers(self):
         """Configure the optimizer"""

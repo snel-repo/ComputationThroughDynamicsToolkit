@@ -1,3 +1,4 @@
+import warnings
 from typing import Optional, Tuple
 
 import numpy as np
@@ -241,6 +242,329 @@ def get_bps(inf_rates, true_spikes):
         true_spikes_flat.clone().detach().float(),
     ).item()
     return bps
+
+
+def _to_numpy_array(array):
+    if isinstance(array, torch.Tensor):
+        return array.detach().cpu().numpy()
+    return np.asarray(array)
+
+
+def _ensure_traj_array(array):
+    array = _to_numpy_array(array).astype(np.float64, copy=False)
+    if array.ndim == 2:
+        return array[None, ...]
+    if array.ndim != 3:
+        raise ValueError(
+            "Expected a 2D array of shape (T, D) or a 3D array of shape (B, T, D)."
+        )
+    return array
+
+
+def _flatten_traj_array(array):
+    return array.reshape(-1, array.shape[-1])
+
+
+def _temporal_bin(array, bin_size, reduce_mode="mean"):
+    if bin_size <= 1:
+        return array
+
+    if array.shape[1] < bin_size:
+        raise ValueError(f"bin_size={bin_size} exceeds traj length {array.shape[1]}")
+
+    trimmed_steps = (array.shape[1] // bin_size) * bin_size
+    if trimmed_steps != array.shape[1]:
+        array = array[:, :trimmed_steps, :]
+
+    b, t, d = array.shape
+    array = array.reshape(b, t // bin_size, bin_size, d)
+    if reduce_mode == "sum":
+        return array.sum(axis=2)
+    if reduce_mode == "mean":
+        return array.mean(axis=2)
+    raise ValueError(f"Unknown bin reduction mode: {reduce_mode}")
+
+
+def _moving_average(array, window_size):
+    if window_size <= 1:
+        return array
+
+    pad_left = window_size // 2
+    pad_right = window_size - 1 - pad_left
+    padded = np.pad(
+        array,
+        ((0, 0), (pad_left, pad_right), (0, 0)),
+        mode="edge",
+    )
+    cumsum = np.cumsum(padded, axis=1, dtype=np.float64)
+    cumsum = np.concatenate(
+        [np.zeros((array.shape[0], 1, array.shape[2]), dtype=np.float64), cumsum],
+        axis=1,
+    )
+    return (cumsum[:, window_size:, :] - cumsum[:, :-window_size, :]) / window_size
+
+
+def _fit_apply_pca(train_array, val_array, pca_dim):
+    if pca_dim is None:
+        return train_array, val_array
+
+    train_flat = _flatten_traj_array(train_array)
+    val_flat = _flatten_traj_array(val_array)
+    max_dim = min(pca_dim, train_flat.shape[0], train_flat.shape[1])
+    if max_dim < 1:
+        raise ValueError("PCA requires at least one component.")
+
+    pca = PCA(n_components=max_dim)
+    train_pca = pca.fit_transform(train_flat)
+    val_pca = pca.transform(val_flat)
+
+    train_shape = train_array.shape[:2] + (max_dim,)
+    val_shape = val_array.shape[:2] + (max_dim,)
+    return train_pca.reshape(train_shape), val_pca.reshape(val_shape)
+
+
+def _delay_embed(array, n_delays, delay_lag):
+    if n_delays <= 0:
+        return array
+
+    required_steps = n_delays * delay_lag
+    if array.shape[1] <= required_steps:
+        raise ValueError(
+            "Delay embedding requires more time steps than n_delays * delay_lag."
+        )
+
+    effective_steps = array.shape[1] - required_steps
+    embedded = []
+    for delay_ind in range(n_delays + 1):
+        start = required_steps - delay_ind * delay_lag
+        stop = start + effective_steps
+        embedded.append(array[:, start:stop, :])
+    return np.concatenate(embedded, axis=-1)
+
+
+def _paired_subsample(true_array, pred_array, max_samples, rng):
+    if max_samples is None or true_array.shape[0] <= max_samples:
+        return true_array, pred_array
+
+    inds = rng.choice(true_array.shape[0], size=max_samples, replace=False)
+    return true_array[inds], pred_array[inds]
+
+
+def _symmetrize(matrix):
+    return 0.5 * (matrix + matrix.T)
+
+
+def _regularized_covariance(array, covariance_reg):
+    dim = array.shape[1]
+    if array.shape[0] <= 1:
+        return np.eye(dim, dtype=np.float64) * max(covariance_reg, 1e-8)
+
+    cov = np.cov(array, rowvar=False)
+    if np.ndim(cov) == 0:
+        cov = np.array([[float(cov)]], dtype=np.float64)
+    cov = _symmetrize(np.asarray(cov, dtype=np.float64))
+    diag_scale = float(np.trace(cov) / max(dim, 1))
+    if not np.isfinite(diag_scale) or diag_scale <= 0:
+        diag_scale = 1.0
+    cov += np.eye(dim, dtype=np.float64) * (covariance_reg * diag_scale)
+    return cov
+
+
+def _matrix_sqrt_psd(matrix):
+    eigvals, eigvecs = np.linalg.eigh(_symmetrize(matrix))
+    eigvals = np.clip(eigvals, 0.0, None)
+    return (eigvecs * np.sqrt(eigvals)) @ eigvecs.T
+
+
+def _matrix_inv_psd(matrix, min_eig=1e-12):
+    eigvals, eigvecs = np.linalg.eigh(_symmetrize(matrix))
+    eigvals = np.clip(eigvals, min_eig, None)
+    return (eigvecs * (1.0 / eigvals)) @ eigvecs.T
+
+
+def _safe_logdet_psd(matrix, min_eig=1e-12):
+    eigvals = np.linalg.eigvalsh(_symmetrize(matrix))
+    eigvals = np.clip(eigvals, min_eig, None)
+    return float(np.sum(np.log(eigvals)))
+
+
+def _gaussian_kl(mean_true, cov_true, mean_pred, cov_pred):
+    dim = mean_true.shape[0]
+    cov_pred_inv = _matrix_inv_psd(cov_pred)
+    mean_diff = (mean_pred - mean_true)[:, None]
+    trace_term = np.trace(cov_pred_inv @ cov_true)
+    mahal_term = float(mean_diff.T @ cov_pred_inv @ mean_diff)
+    logdet_term = _safe_logdet_psd(cov_pred) - _safe_logdet_psd(cov_true)
+    return float(0.5 * (trace_term + mahal_term - dim + logdet_term))
+
+
+def _gaussian_wasserstein(mean_true, cov_true, mean_pred, cov_pred):
+    mean_term = float(np.sum((mean_true - mean_pred) ** 2))
+    cov_true = _symmetrize(cov_true)
+    cov_pred = _symmetrize(cov_pred)
+    pred_sqrt = _matrix_sqrt_psd(cov_pred)
+    inner = _symmetrize(pred_sqrt @ cov_true @ pred_sqrt)
+    sqrt_inner = _matrix_sqrt_psd(inner)
+    cov_term = np.trace(cov_true + cov_pred - 2.0 * sqrt_inner)
+    return float(np.sqrt(max(mean_term + cov_term, 0.0)))
+
+
+class DelayEmbedDistributionMetric:
+    """
+    Compare validation trajectory distributions after mapping both into one space.
+
+    The metric optionally bins and smooths trajectories, applies source-specific PCA,
+    constructs a delay embedding, and then linearly maps inferred trajectories into the
+    reference embedding using the training split. It fits a regularized Gaussian to each
+    validation point cloud in that comparison space and reports either Gaussian KL or
+    Gaussian 2-Wasserstein distance.
+
+    Assumptions:
+        - training trajectories are time-aligned between reference and inferred data;
+        - KL/Wasserstein are computed on Gaussian approximations, not exact empirical
+          distributions;
+        - raw spikes should usually be binned or smoothed before fitting Gaussians;
+        - when `input_source="spikes"`, the reference side is observed spike counts
+          after temporal preprocessing and the inferred side is the model rate output
+          passed through the same preprocessing.
+
+    Lower values mean the inferred geometry is closer to the reference geometry.
+    `distance_metric="kl"` computes KL(reference || aligned inferred), while
+    `distance_metric="wasserstein"` computes the Gaussian 2-Wasserstein distance.
+    """
+
+    def __init__(
+        self,
+        input_source="latents",
+        distance_metric="wasserstein",
+        pca_dim=None,
+        n_delays=0,
+        delay_lag=1,
+        temporal_bin_size=1,
+        smoothing_window=1,
+        covariance_reg=1e-5,
+        max_train_samples=50000,
+        max_val_samples=50000,
+        random_state=0,
+    ):
+        self.input_source = input_source
+        self.distance_metric = distance_metric
+        self.pca_dim = pca_dim
+        self.n_delays = int(n_delays)
+        self.delay_lag = int(delay_lag)
+        self.temporal_bin_size = int(temporal_bin_size)
+        self.smoothing_window = int(smoothing_window)
+        self.covariance_reg = float(covariance_reg)
+        self.max_train_samples = max_train_samples
+        self.max_val_samples = max_val_samples
+        self.random_state = random_state
+
+        if self.input_source not in {"latents", "rates", "spikes"}:
+            raise ValueError(
+                f"Unsupported input_source '{self.input_source}'. "
+                "Use 'latents', 'rates', or 'spikes'."
+            )
+        if self.distance_metric not in {"kl", "wasserstein"}:
+            raise ValueError(
+                f"Unsupported distance_metric '{self.distance_metric}'. "
+                "Use 'kl' or 'wasserstein'."
+            )
+        if self.delay_lag < 1:
+            raise ValueError("delay_lag must be >= 1.")
+        if self.n_delays < 0:
+            raise ValueError("n_delays must be >= 0.")
+        if self.temporal_bin_size < 1:
+            raise ValueError("temporal_bin_size must be >= 1.")
+        if self.smoothing_window < 1:
+            raise ValueError("smoothing_window must be >= 1.")
+        if self.covariance_reg <= 0:
+            raise ValueError("covariance_reg must be positive.")
+
+    def _preprocess_train_val(self, train_array, val_array):
+        train_array = _ensure_traj_array(train_array)
+        val_array = _ensure_traj_array(val_array)
+
+        reduce_mode = "mean" if self.input_source == "latents" else "sum"
+        train_array = _temporal_bin(
+            train_array, self.temporal_bin_size, reduce_mode=reduce_mode
+        )
+        val_array = _temporal_bin(
+            val_array, self.temporal_bin_size, reduce_mode=reduce_mode
+        )
+
+        train_array = _moving_average(train_array, self.smoothing_window)
+        val_array = _moving_average(val_array, self.smoothing_window)
+
+        train_array, val_array = _fit_apply_pca(train_array, val_array, self.pca_dim)
+        train_array = _delay_embed(train_array, self.n_delays, self.delay_lag)
+        val_array = _delay_embed(val_array, self.n_delays, self.delay_lag)
+        return train_array, val_array
+
+    def __call__(self, true_train, pred_train, true_val, pred_val):
+        if (
+            self.input_source == "spikes"
+            and self.temporal_bin_size == 1
+            and self.smoothing_window == 1
+        ):
+            warnings.warn(
+                "Comparing raw spikes without binning or smoothing can produce noisy "
+                "Gaussian fits. Set temporal_bin_size > 1 or smoothing_window > 1 "
+                "for more stable comparisons.",
+                stacklevel=2,
+            )
+
+        true_train, true_val = self._preprocess_train_val(true_train, true_val)
+        pred_train, pred_val = self._preprocess_train_val(pred_train, pred_val)
+
+        true_train_flat = _flatten_traj_array(true_train)
+        pred_train_flat = _flatten_traj_array(pred_train)
+        true_val_flat = _flatten_traj_array(true_val)
+        pred_val_flat = _flatten_traj_array(pred_val)
+
+        if true_train_flat.shape[0] != pred_train_flat.shape[0]:
+            raise ValueError(
+                "Training trajectories must have the same number of aligned samples "
+                "after preprocessing."
+            )
+
+        rng = np.random.RandomState(self.random_state)
+        true_train_flat, pred_train_flat = _paired_subsample(
+            true_train_flat, pred_train_flat, self.max_train_samples, rng
+        )
+        true_val_flat, pred_val_flat = _paired_subsample(
+            true_val_flat, pred_val_flat, self.max_val_samples, rng
+        )
+
+        aligner = LinearRegression()
+        aligner.fit(pred_train_flat, true_train_flat)
+        pred_val_aligned = aligner.predict(pred_val_flat)
+
+        mean_true = np.mean(true_val_flat, axis=0)
+        mean_pred = np.mean(pred_val_aligned, axis=0)
+        cov_true = _regularized_covariance(true_val_flat, self.covariance_reg)
+        cov_pred = _regularized_covariance(pred_val_aligned, self.covariance_reg)
+
+        if self.distance_metric == "kl":
+            return _gaussian_kl(mean_true, cov_true, mean_pred, cov_pred)
+        return _gaussian_wasserstein(mean_true, cov_true, mean_pred, cov_pred)
+
+
+def compute_delay_embedding_distribution_metric(
+    true_train,
+    pred_train,
+    true_val,
+    pred_val,
+    **metric_kwargs,
+):
+    """
+    Thin functional wrapper around DelayEmbedDistributionMetric.
+
+    Lower values indicate that the inferred validation trajectories are closer to the
+    reference validation trajectories in the aligned PCA/delay-embedding space.
+    """
+
+    metric = DelayEmbedDistributionMetric(**metric_kwargs)
+    return metric(true_train, pred_train, true_val, pred_val)
 
 
 def compute_jacobians(

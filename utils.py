@@ -22,17 +22,18 @@ def generate_paths(RUN_DESC: str, TASK: str, MODEL: str):
     RUN_DIR = HOME_DIR / "content" / "runs" / "task-trained" / RUN_TAG
 
     # -----------------Default Parameter Sets -----------------------------------
+    cfg_root = Path("configs")
     configs = dict(
-        task_wrapper=Path(f"configs/task_wrapper/{TASK}.yaml"),
-        env_task=Path(f"configs/env_task/{TASK}.yaml"),
-        env_sim=Path(f"configs/env_sim/{TASK}.yaml"),
-        datamodule_task=Path(f"configs/datamodule_train/datamodule_{TASK}.yaml"),
-        datamodule_sim=Path(f"configs/datamodule_sim/datamodule_{TASK}.yaml"),
-        model=Path(f"configs/model/{MODEL}.yaml"),
-        simulator=Path(f"configs/simulator/default_{TASK}.yaml"),
-        callbacks=Path(f"configs/callbacks/default_{TASK}.yaml"),
-        loggers=Path("configs/logger/default.yaml"),
-        trainer=Path("configs/trainer/default.yaml"),
+        task_wrapper=cfg_root / "task_wrapper" / f"{TASK}.yaml",
+        env_task=cfg_root / "env_task" / f"{TASK}.yaml",
+        env_sim=cfg_root / "env_sim" / f"{TASK}.yaml",
+        datamodule_task=cfg_root / "datamodule_train" / f"datamodule_{TASK}.yaml",
+        datamodule_sim=cfg_root / "datamodule_sim" / f"datamodule_{TASK}.yaml",
+        model=cfg_root / "model" / f"{MODEL}.yaml",
+        simulator=cfg_root / "simulator" / f"default_{TASK}.yaml",
+        callbacks=cfg_root / "callbacks" / f"default_{TASK}.yaml",
+        loggers=cfg_root / "logger" / "default.yaml",
+        trainer=cfg_root / "trainer" / "default.yaml",
     )
     output_dict = {
         "path_dict": paths,

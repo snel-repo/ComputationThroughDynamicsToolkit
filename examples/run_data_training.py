@@ -25,11 +25,13 @@ LOCAL_MODE = False
 OVERWRITE = True
 WANDB_LOGGING = True  # If users have a WandB account
 
-RUN_DESC = "PCM_LFADS_test"  # Description of the run
+RUN_DESC = "ChaoticDelayedMatching_SAE_NODE_BatchMatch"  # Description of the run
 NUM_SAMPLES = 1
-MODEL_CLASS = "LFADS"  # "LFADS" or "SAE"
-MODEL = "LFADS"  # see /ctd/data_modeling/configs/models/{MODEL_CLASS}/ for options
-DATA = "PhaseCodedMemory"  # "NBFF", "RandomTarget" or "MultiTask
+MODEL_CLASS = "SAE"  # "LFADS" or "SAE"
+MODEL = "NODE"  # see /ctd/data_modeling/configs/models/{MODEL_CLASS}/ for options
+DATA = (
+    "ChaoticDelayedMatching"  # "NBFF", "RandomTarget", "MultiTask", "PhaseCodedMemory"
+)
 INFER_INPUTS = False  # Whether external inputs are inferred or supplied
 
 if DATA == "NBFF":
@@ -40,6 +42,8 @@ elif DATA == "RandomTarget":
     prefix = "tt_RandomTarget"
 elif DATA == "PhaseCodedMemory":
     prefix = "tt_PhaseCodedMemory"
+elif DATA == "ChaoticDelayedMatching":
+    prefix = "tt_ChaoticDelayedMatching"
 
 # -------------------------------------
 # Hyperparameter sweeping:
@@ -53,7 +57,7 @@ SEARCH_SPACE = {
 }
 
 # -----------------Default Parameter Sets -----------------------------------
-cpath = "../data_modeling/configs"
+cpath = "configs"
 
 model_path = Path(
     (

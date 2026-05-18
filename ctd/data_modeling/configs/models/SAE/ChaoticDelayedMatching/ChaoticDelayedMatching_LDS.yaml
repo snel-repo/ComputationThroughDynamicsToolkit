@@ -1,0 +1,15 @@
+_target_: ctd.data_modeling.models.SAE.lds.LDSSAE
+dataset: ChaoticDelayedMatching
+
+encoder_size: 100
+encoder_window: -1
+
+heldin_size: 64
+heldout_size: 96
+latent_size: 128
+input_size: 2
+
+weight_decay: 0
+lr: 1e-4
+
+dropout: 0.05

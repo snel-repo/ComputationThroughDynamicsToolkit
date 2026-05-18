@@ -1,0 +1,4 @@
+_target_: ctd.task_modeling.task_wrapper.task_wrapper.TaskTrainedWrapper
+
+learning_rate: 1.0e-3
+weight_decay: 1.0e-6

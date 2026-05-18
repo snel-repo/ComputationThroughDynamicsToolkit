@@ -4,3 +4,4 @@ max_epochs: 1000
 # Prevent console output from individual models
 gradient_clip_val: 1.0
 enable_progress_bar: False
+precision: 32-true

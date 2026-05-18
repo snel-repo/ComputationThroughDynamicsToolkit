@@ -1,0 +1,51 @@
+model_checkpoint:
+  _target_: pytorch_lightning.callbacks.ModelCheckpoint
+  dirpath: "."
+  monitor: valid/loss
+  save_last: True
+
+tune_report_callback:
+  _target_: ray.tune.integration.pytorch_lightning.TuneReportCallback
+  metrics:
+    loss: valid/loss
+
+latent_traj_callback:
+  _target_: ctd.task_modeling.callbacks.callbacks.LatentTrajectoryPlot
+  log_every_n_epochs: 20
+
+chaotic_delayed_matching_pc_time_callback:
+  _target_: ctd.task_modeling.callbacks.callbacks.ChaoticDelayedMatchingPCTimeCallback
+  log_every_n_epochs: 20
+  n_pcs: 12
+  max_trials_per_condition: 20
+
+chaotic_delayed_matching_io_callback:
+  _target_: ctd.task_modeling.callbacks.callbacks.ChaoticDelayedMatchingIOCallback
+  log_every_n_epochs: 20
+  n_trials_to_plot: 4
+  output_axis: 0
+  n_neurons_to_plot: 24
+  neuron_selection: chaotic
+
+chaotic_delayed_matching_performance_callback:
+  _target_: ctd.task_modeling.callbacks.callbacks.ChaoticDelayedMatchingPerformanceCallback
+  log_every_n_epochs: 20
+  success_error_threshold: 1.0
+  criterion_window: 100
+  criterion_successes: 95
+
+chaotic_delayed_matching_chaos_callback:
+  _target_: ctd.task_modeling.callbacks.callbacks.ChaoticDelayedMatchingChaosCallback
+  log_every_n_epochs: 20
+  perturbation_scale: 1.0e-3
+  max_trials: 16
+
+chaotic_delayed_matching_lyapunov_callback:
+  _target_: ctd.task_modeling.callbacks.callbacks.ChaoticDelayedMatchingLyapunovCallback
+  log_every_n_epochs: 20
+  max_trials: 8
+  warmup_steps: 50
+  include_histogram: true
+  include_divergence_plot: true
+  max_plot_trials: 8
+  max_divergence_trials: 4

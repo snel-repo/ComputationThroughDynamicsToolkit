@@ -8,11 +8,24 @@ import torch
 import wandb
 from sklearn.decomposition import PCA
 
+from ctd.data_modeling.callbacks.LFADS.callbacks import (
+    _estimate_lfads_max_lyapunov_exponent,
+    _estimate_lfads_perturbation_divergence,
+    _extract_trial_phase_metadata,
+)
 from ctd.data_modeling.callbacks.metrics import (
     compute_metrics,
     linear_regression,
     r2_score,
     regression_r2_score,
+)
+from ctd.task_modeling.callbacks.callbacks import (
+    _plot_local_log_growth,
+    _plot_local_log_growth_by_trial_phase,
+    _plot_lyapunov_histogram,
+    _plot_lyapunov_history,
+    _plot_perturbation_divergence,
+    get_wandb_logger,
 )
 
 
@@ -58,6 +71,43 @@ def fig_to_rgb_array(fig):
     im = fig_data.reshape((int(h), int(w), -1))
     plt.close()
     return im
+
+
+def _sae_initial_hidden(pl_module, spikes):
+    encoder_window = getattr(
+        getattr(pl_module, "hparams", object()),
+        "encoder_window",
+        getattr(pl_module, "encoder_window", None),
+    )
+    if encoder_window is None:
+        return None
+
+    _, h_n = pl_module.encoder(spikes[:, :encoder_window, :])
+    h_n = torch.cat([*h_n], -1)
+    if hasattr(pl_module, "dropout"):
+        h_n = pl_module.dropout(h_n)
+    hidden = pl_module.ic_linear(h_n)
+    if getattr(pl_module, "inv_encoder", False):
+        hidden = pl_module.readout(hidden, reverse=True)
+
+    decoder_cell = getattr(getattr(pl_module, "decoder", None), "cell", None)
+    if isinstance(decoder_cell, (torch.nn.GRUCell, torch.nn.RNNCell)) and hasattr(
+        pl_module, "dropout"
+    ):
+        hidden = pl_module.dropout(hidden)
+    return hidden
+
+
+def _sae_rates_from_output(pl_module, pred_logrates):
+    if hasattr(pl_module, "intensity_func"):
+        pred_rates = pl_module.intensity_func(pred_logrates)
+        if (
+            hasattr(pl_module, "intensity_func_name")
+            and pl_module.intensity_func_name == "passthrough"
+        ):
+            pred_rates = pred_rates**2
+        return pred_rates
+    return torch.exp(pred_logrates)
 
 
 class TrajectoryPlotModels(pl.Callback):
@@ -685,3 +735,190 @@ class DTMetricsCallback(pl.Callback):
                 **metrics,
             }
         )
+
+
+class ChaoticDelayedMatchingLyapunovCallback(pl.Callback):
+    """Log finite-time Lyapunov diagnostics for the SAE latent dynamics."""
+
+    def __init__(
+        self,
+        log_every_n_epochs: int = 10,
+        max_trials: int = 8,
+        warmup_steps: int = 50,
+        max_steps: int = None,
+        include_histogram: bool = True,
+        include_divergence_plot: bool = True,
+        max_plot_trials: int = 8,
+        max_divergence_trials: int = 4,
+    ):
+        self.log_every_n_epochs = log_every_n_epochs
+        self.max_trials = max_trials
+        self.warmup_steps = warmup_steps
+        self.max_steps = max_steps
+        self.include_histogram = include_histogram
+        self.include_divergence_plot = include_divergence_plot
+        self.max_plot_trials = max_plot_trials
+        self.max_divergence_trials = max_divergence_trials
+        self._epoch_history = []
+        self._lyapunov_history = []
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+            return
+
+        dataloader = trainer.datamodule.val_dataloader()
+        batch = next(iter(dataloader))
+        spikes, _, inputs, extra, *_ = batch
+        spikes = spikes.to(pl_module.device)
+        inputs = inputs.to(pl_module.device)
+        extra = _extract_trial_phase_metadata(extra)
+
+        gen_cell = getattr(getattr(pl_module, "decoder", None), "cell", None)
+        if gen_cell is None:
+            return
+
+        was_training = pl_module.training
+        pl_module.eval()
+        try:
+            initial_hidden = _sae_initial_hidden(pl_module, spikes)
+            if initial_hidden is None:
+                return
+            pred_logrates, pred_latents = pl_module(spikes, inputs)
+            metrics = _estimate_lfads_max_lyapunov_exponent(
+                gen_cell=gen_cell,
+                gen_init=initial_hidden,
+                gen_inputs=inputs,
+                n_trials=self.max_trials,
+                warmup_steps=self.warmup_steps,
+                max_steps=self.max_steps,
+                return_diagnostics=True,
+            )
+            if metrics is None:
+                return
+
+            time_series = np.asarray(metrics["time_series"])
+            time_series_std = np.asarray(metrics.get("time_series_std"))
+            per_trial_estimates = np.asarray(metrics.get("per_trial_estimates", []))
+
+            pl_module.log(
+                "valid/max_lyapunov_estimate",
+                metrics["max_lyapunov_estimate"],
+                on_epoch=True,
+                prog_bar=True,
+            )
+            pl_module.log(
+                "valid/max_lyapunov_std",
+                metrics["max_lyapunov_std"],
+                on_epoch=True,
+            )
+            pl_module.log(
+                "valid/max_lyapunov_local_log_growth",
+                metrics["local_log_growth_mean"],
+                on_epoch=True,
+            )
+            if time_series.size > 0:
+                pl_module.log(
+                    "valid/max_lyapunov_positive_time_frac",
+                    float(np.mean(time_series > 0.0)),
+                    on_epoch=True,
+                )
+                pl_module.log(
+                    "valid/max_lyapunov_trace_min",
+                    float(np.min(time_series)),
+                    on_epoch=True,
+                )
+                pl_module.log(
+                    "valid/max_lyapunov_trace_max",
+                    float(np.max(time_series)),
+                    on_epoch=True,
+                )
+
+            divergence_metrics = None
+            if self.include_divergence_plot:
+                divergence_metrics = _estimate_lfads_perturbation_divergence(
+                    gen_cell=gen_cell,
+                    gen_init=initial_hidden,
+                    gen_inputs=inputs,
+                    n_trials=self.max_divergence_trials,
+                    warmup_steps=self.warmup_steps,
+                    max_steps=self.max_steps,
+                )
+                if divergence_metrics is not None:
+                    pl_module.log(
+                        "valid/max_lyapunov_mean_perturbation_slope",
+                        divergence_metrics["mean_growth_slope"],
+                        on_epoch=True,
+                    )
+
+            self._epoch_history.append(int(trainer.current_epoch))
+            self._lyapunov_history.append(float(metrics["max_lyapunov_estimate"]))
+
+            wandb_logger = get_wandb_logger(trainer.loggers)
+            if wandb_logger is None:
+                return
+
+            local_fig = _plot_local_log_growth(time_series, time_series_std)
+            wandb_logger.log(
+                {
+                    "valid/chaos/local_log_growth_plot": wandb.Image(local_fig),
+                    "global_step": trainer.global_step,
+                }
+            )
+            plt.close(local_fig)
+
+            if extra is not None:
+                phase_fig = _plot_local_log_growth_by_trial_phase(
+                    time_series,
+                    extra=extra,
+                    warmup_steps=metrics["warmup_steps"],
+                    std_series=time_series_std,
+                )
+                wandb_logger.log(
+                    {
+                        "valid/chaos/local_lyapunov_by_trial_phase": wandb.Image(
+                            phase_fig
+                        ),
+                        "global_step": trainer.global_step,
+                    }
+                )
+                plt.close(phase_fig)
+
+            if self.include_histogram and per_trial_estimates.size > 0:
+                hist_fig = _plot_lyapunov_histogram(per_trial_estimates)
+                wandb_logger.log(
+                    {
+                        "valid/chaos/lyapunov_histogram": wandb.Image(hist_fig),
+                        "global_step": trainer.global_step,
+                    }
+                )
+                plt.close(hist_fig)
+
+            history_fig = _plot_lyapunov_history(
+                self._epoch_history, self._lyapunov_history
+            )
+            wandb_logger.log(
+                {
+                    "valid/chaos/lyapunov_vs_epoch": wandb.Image(history_fig),
+                    "global_step": trainer.global_step,
+                }
+            )
+            plt.close(history_fig)
+
+            if self.include_divergence_plot and divergence_metrics is not None:
+                trial_curves = np.asarray(divergence_metrics["log_delta_trials"])[
+                    : self.max_plot_trials
+                ]
+                div_fig = _plot_perturbation_divergence(
+                    np.asarray(divergence_metrics["mean_log_delta"]),
+                    np.asarray(divergence_metrics["std_log_delta"]),
+                    trial_curves=trial_curves,
+                )
+                wandb_logger.log(
+                    {
+                        "valid/chaos/perturbation_divergence": wandb.Image(div_fig),
+                        "global_step": trainer.global_step,
+                    }
+                )
+                plt.close(div_fig)
+        finally:
+            pl_module.train(was_training)
