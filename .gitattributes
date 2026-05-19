@@ -3,13 +3,12 @@ pretrained/20241017_NBFF_NoisyGRU_NewFinal/datamodule_sim.pkl filter=lfs diff=lf
 pretrained/20241017_NBFF_NoisyGRU_NewFinal/datamodule_train.pkl filter=lfs diff=lfs merge=lfs -text
 pretrained/20241017_NBFF_NoisyGRU_NewFinal/model.pkl filter=lfs diff=lfs merge=lfs -text
 pretrained/20241017_NBFF_NoisyGRU_NewFinal/simulator.pkl filter=lfs diff=lfs merge=lfs -text
-
 pretrained/20241113_RandomTarget_NoisyGRU_Final2/datamodule_sim.pkl filter=lfs diff=lfs merge=lfs -text
 pretrained/20241113_RandomTarget_NoisyGRU_Final2/datamodule_train.pkl filter=lfs diff=lfs merge=lfs -text
 pretrained/20241113_RandomTarget_NoisyGRU_Final2/model.pkl filter=lfs diff=lfs merge=lfs -text
 pretrained/20241113_RandomTarget_NoisyGRU_Final2/simulator.pkl filter=lfs diff=lfs merge=lfs -text
-
 pretrained/20241113_MultiTask_NoisyGRU_Final2/datamodule_sim.pkl filter=lfs diff=lfs merge=lfs -text
 pretrained/20241113_MultiTask_NoisyGRU_Final2/datamodule_train.pkl filter=lfs diff=lfs merge=lfs -text
 pretrained/20241113_MultiTask_NoisyGRU_Final2/model.pkl filter=lfs diff=lfs merge=lfs -text
 pretrained/20241113_MultiTask_NoisyGRU_Final2/simulator.pkl filter=lfs diff=lfs merge=lfs -text
+pretrained/**/*.pkl filter=lfs diff=lfs merge=lfs -text
