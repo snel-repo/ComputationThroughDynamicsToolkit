@@ -738,11 +738,29 @@ def panel_unperturbed(ax_trace, ax_pc):
     ax_trace.set_title(
         "B  Unperturbed trial performance", loc="left", fontweight="bold"
     )
-    ax_trace.plot(t, targets_np[trial_idx, :, 0], color="0.1", lw=1.5, label="target")
-    ax_trace.plot(
-        t, controlled_np[trial_idx, :, 0], color="#1F77B4", lw=1.2, label="model"
-    )
     add_phase_spans(ax_trace, extra_np[trial_idx], alpha=0.08)
+    pert_alpha = min(0.55, max(0.08, 2.5 / max(N_IC_PERTURBATIONS, 1)))
+    for k in range(N_IC_PERTURBATIONS):
+        ax_trace.plot(
+            t,
+            pert_out_np[k, trial_idx, :, 0],
+            color="#D62728",
+            lw=0.75,
+            alpha=pert_alpha,
+            label="perturbed ICs" if k == 0 else None,
+            zorder=2,
+        )
+    ax_trace.plot(
+        t, targets_np[trial_idx, :, 0], color="0.1", lw=1.5, label="target", zorder=4
+    )
+    ax_trace.plot(
+        t,
+        controlled_np[trial_idx, :, 0],
+        color="#1F77B4",
+        lw=1.3,
+        label="model",
+        zorder=5,
+    )
     ax_trace.set_ylabel("output")
     ax_trace.set_xlabel(time_xlabel())
     ax_trace.legend(frameon=False, loc="upper right")
