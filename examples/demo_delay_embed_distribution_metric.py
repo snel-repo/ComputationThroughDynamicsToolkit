@@ -224,8 +224,19 @@ def get_default_args():
 
 
 # %%
+def _resolve_repo_root():
+    try:
+        return Path(__file__).resolve().parents[1]
+    except NameError:
+        pass
+    for candidate in [Path.cwd(), *Path.cwd().resolve().parents]:
+        if (candidate / "ctd").is_dir() and (candidate / "examples").is_dir():
+            return candidate
+    return Path.cwd().resolve()
+
+
 def run_demo(args):
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = _resolve_repo_root()
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     install_compatibility_stubs(repo_root)
@@ -234,6 +245,8 @@ def run_demo(args):
     from ctd.comparison.comparison import Comparison
 
     tt_path = Path(args.tt_path)
+    if not tt_path.is_absolute():
+        tt_path = (repo_root / tt_path).resolve()
     if not tt_path.exists():
         raise FileNotFoundError(f"Task-trained benchmark not found: {tt_path}")
 
@@ -280,10 +293,39 @@ def run_demo(args):
 
 
 # %%
+def _in_interactive_kernel():
+    if "ipykernel" in sys.modules:
+        return True
+    try:
+        from IPython import get_ipython
+
+        ip = get_ipython()
+        return ip is not None and ip.__class__.__name__ != "TerminalInteractiveShell"
+    except Exception:
+        return False
+
+
 def main():
-    args = build_parser().parse_args()
-    run_demo(args)
+    parser = build_parser()
+    if _in_interactive_kernel():
+        # In Jupyter / VSCode cell mode the kernel injects extra argv entries
+        # like --f=/run/.../kernel-*.json that argparse can't recognize.
+        args, _ = parser.parse_known_args([])
+    else:
+        args = parser.parse_args()
+    return run_demo(args)
 
 
 if __name__ == "__main__":
     main()
+
+
+# %%
+# Cell-style entry point: running this cell in Jupyter / VSCode interactive
+# mode runs the demo with default arguments. Edit `cell_overrides` to tweak.
+if _in_interactive_kernel():
+    cell_overrides = {}  # e.g. {"distance_metric": "kl", "input_source": "rates"}
+    _args = build_parser().parse_args([])
+    for _k, _v in cell_overrides.items():
+        setattr(_args, _k, _v)
+    metrics = run_demo(_args)

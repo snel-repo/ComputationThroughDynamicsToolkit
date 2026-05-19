@@ -30,11 +30,18 @@ tt_3bff_path = HOME_DIR + "pretrained/20241017_NBFF_NoisyGRU_NewFinal/"
 tt_MultiTask_path = HOME_DIR + "pretrained/20241113_MultiTask_NoisyGRU_Final2/"
 tt_RandomTarget_path = HOME_DIR + "pretrained/20241113_RandomTarget_NoisyGRU_Final2/"
 tt_PhaseCodedMemory_path = HOME_DIR + "pretrained/PCM_NoisyGRU_Final/"
+tt_ChaoticDelayedMatching_path = (
+    HOME_DIR + "pretrained/20260320_ChaoticDelayedMatching_Final/"
+)
 
 tt_3bff = Analysis_TT(run_name="tt_3bff", filepath=tt_3bff_path)
 tt_MultiTask = Analysis_TT(run_name="tt_MultiTask", filepath=tt_MultiTask_path)
 tt_RandomTarget = Analysis_TT(run_name="tt_RandomTarget", filepath=tt_RandomTarget_path)
 tt_PCM = Analysis_TT(run_name="tt_PhaseCodedMemory", filepath=tt_PhaseCodedMemory_path)
+tt_CDM = Analysis_TT(
+    run_name="tt_ChaoticDelayedMatching",
+    filepath=tt_ChaoticDelayedMatching_path,
+)
 
 # Make copies of the pretrained models to the trained_models folder
 # if the folders don't already exist
@@ -43,6 +50,9 @@ path_MultiTask = HOME_DIR + "content/trained_models/task-trained/tt_MultiTask/"
 path_RandomTarget = HOME_DIR + "content/trained_models/task-trained/tt_RandomTarget/"
 path_PhaseCodedMemory = (
     HOME_DIR + "content/trained_models/task-trained/tt_PhaseCodedMemory/"
+)
+path_ChaoticDelayedMatching = (
+    HOME_DIR + "content/trained_models/task-trained/tt_ChaoticDelayedMatching/"
 )
 
 if not os.path.exists(path_3bff):
@@ -66,6 +76,12 @@ if not os.path.exists(path_PhaseCodedMemory):
     copy_folder_contents(
         tt_PhaseCodedMemory_path,
         HOME_DIR + "content/trained_models/task-trained/tt_PhaseCodedMemory/",
+    )
+
+if not os.path.exists(path_ChaoticDelayedMatching):
+    copy_folder_contents(
+        tt_ChaoticDelayedMatching_path,
+        HOME_DIR + "content/trained_models/task-trained/tt_ChaoticDelayedMatching/",
     )
 
 # Generate simulated datasets
@@ -102,5 +118,11 @@ pcm_subfolder = (
 
 tt_PCM.simulate_neural_data(
     subfolder=pcm_subfolder,
+    dataset_path=dataset_path,
+)
+
+cdm_subfolder = "max_epochs=100_recurrent_gain=2.20E+00_batch_size=256_seed=0"
+tt_CDM.simulate_neural_data(
+    subfolder=cdm_subfolder,
     dataset_path=dataset_path,
 )
