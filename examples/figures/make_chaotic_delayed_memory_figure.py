@@ -56,9 +56,6 @@ N_IC_PERTURBATIONS = 16
 IC_PERTURB_SCALE = 0.5
 IC_PERTURB_MODE = "pc12"  # "pc12" or "random"
 IC_TRIAL = 0
-# Optional sandbox panel: set False to remove the LFADS IC perturbation row.
-INCLUDE_LFADS_IC_PERTURBATION = True
-LFADS_IC_PERTURB_SCALE = 0.5
 RANDOM_SEED = 11
 TIME_BIN_MS = (
     1.0  # ChaoticDelayedMatching uses one model step per ms in the default configs.
@@ -74,12 +71,11 @@ PHASE_DEFS = [
     ("Delay 2", "delay2_on", "delay2_off", "#E45756"),
     ("Response", "resp_on", "resp_off", "#54A24B"),
 ]
-RASTER_PANEL_LABEL = "F" if INCLUDE_LFADS_IC_PERTURBATION else "E"
-LFADS_PANEL_LABEL = "G" if INCLUDE_LFADS_IC_PERTURBATION else "F"
-
-
 # %%
+
 # --------------------------- Setup helpers ---------------------------
+
+
 def install_compatibility_stubs():
     """Small import shims used by older saved pickles."""
 
@@ -422,125 +418,6 @@ def make_ic_perturbations(hidden0, pca, n_perturbations, scale, mode, generator)
     return delta
 
 
-def get_lfads_trial_batch(analysis, phase, trial):
-    from ctd.data_modeling.datamodules.LFADS.tuples import SessionBatch
-
-    if phase == "all":
-        n_train = len(analysis.datamodule.train_ds)
-        dataset = (
-            analysis.datamodule.train_ds
-            if trial < n_train
-            else analysis.datamodule.valid_ds
-        )
-        local_trial = trial if trial < n_train else trial - n_train
-    elif phase == "train":
-        dataset = analysis.datamodule.train_ds
-        local_trial = trial
-    elif phase == "val":
-        dataset = analysis.datamodule.valid_ds
-        local_trial = trial
-    else:
-        raise ValueError(f"Unknown LFADS phase: {phase}")
-
-    local_trial = int(np.clip(local_trial, 0, len(dataset) - 1))
-    model_tensors, _ = dataset[local_trial]
-    return SessionBatch(*[tensor[None, ...] for tensor in model_tensors])
-
-
-def lfads_decode_from_gen_init(model, gen_init, ci, ext_input):
-    hps = model.hparams
-    batch_size = gen_init.shape[0]
-    device = gen_init.device
-    fwd_steps = hps.recon_seq_len - ext_input.shape[1]
-    if fwd_steps > 0:
-        pad = torch.zeros(batch_size, fwd_steps, hps.ext_input_dim, device=device)
-        ext_input = torch.cat([ext_input, pad], dim=1)
-    dec_rnn_input = torch.cat([ci, ext_input], dim=2)
-    dec_rnn_h0 = torch.cat(
-        [
-            gen_init,
-            torch.tile(model.decoder.con_h0, (batch_size, 1)),
-            torch.zeros((batch_size, hps.co_dim), device=device),
-            torch.ones((batch_size, hps.co_dim), device=device),
-            torch.zeros((batch_size, hps.co_dim + hps.ext_input_dim), device=device),
-            model.decoder.rnn.cell.fac_linear(gen_init),
-        ],
-        dim=1,
-    )
-    states, _ = model.decoder.rnn(dec_rnn_input, dec_rnn_h0, sample_posteriors=False)
-    split_states = torch.split(states, model.decoder.rnn.cell.state_dims, dim=2)
-    gen_states = split_states[0]
-    factors = split_states[-1]
-    output_params = model.readout(factors)
-    output_params = model.recon.reshape_output_params(output_params)
-    rates = model.recon.compute_means(output_params)
-    return rates, gen_states
-
-
-def compute_lfads_ic_perturbation_data(
-    analysis, trial, pca, n_perturbations, scale, mode, seed
-):
-    model = analysis.model
-    model.eval()
-    device = getattr(model, "device", next(model.parameters()).device)
-    batch = get_lfads_trial_batch(analysis, LFADS_PHASE, trial)
-    batch = type(batch)(*[tensor.to(device) for tensor in batch])
-    batch = model.infer_aug_stack.process_batch(batch)
-    model.infer_aug_stack.reset()
-
-    encod_data = model.readin(batch.encod_data)
-    ic_mean, _, ci = model.encoder(encod_data)
-    ic_samp = model.readout(ic_mean, reverse=True) if model.inv_encoder else ic_mean
-    gen_init = ic_samp if model.hparams.inv_encoder else model.decoder.ic_to_g0(ic_samp)
-    baseline_rates, baseline_gen_states = lfads_decode_from_gen_init(
-        model, gen_init, ci, batch.ext_input
-    )
-
-    perturb_generator = torch.Generator(device=device)
-    perturb_generator.manual_seed(seed)
-    d_gen0 = make_ic_perturbations(
-        gen_init, pca, int(n_perturbations), float(scale), mode, perturb_generator
-    )
-    pert_gen_init = (gen_init.unsqueeze(0) + d_gen0).reshape(
-        n_perturbations, gen_init.shape[-1]
-    )
-    pert_ci = ci.expand(n_perturbations, -1, -1).clone()
-    pert_ext_input = batch.ext_input.expand(n_perturbations, -1, -1).clone()
-    pert_rates, pert_gen_states = lfads_decode_from_gen_init(
-        model, pert_gen_init, pert_ci, pert_ext_input
-    )
-
-    baseline_gen_np = to_numpy(baseline_gen_states)
-    pert_gen_np = to_numpy(pert_gen_states).reshape(
-        n_perturbations, 1, *baseline_gen_np.shape[1:]
-    )
-    baseline_rates_np = to_numpy(baseline_rates)
-    pert_rates_np = to_numpy(pert_rates).reshape(
-        n_perturbations, 1, *baseline_rates_np.shape[1:]
-    )
-    pert_gen_pc = pca.transform(pert_gen_np.reshape(-1, pert_gen_np.shape[-1])).reshape(
-        n_perturbations, baseline_gen_np.shape[1], 3
-    )
-    baseline_gen_pc = pca.transform(
-        baseline_gen_np.reshape(-1, baseline_gen_np.shape[-1])
-    ).reshape(baseline_gen_np.shape[1], 3)
-    pert_gen0_pc = pca.transform(to_numpy(pert_gen_init))
-    baseline_gen0_pc = pca.transform(to_numpy(gen_init))
-    return {
-        "baseline_gen_pc": baseline_gen_pc,
-        "pert_gen_pc": pert_gen_pc,
-        "baseline_gen0_pc": baseline_gen0_pc,
-        "pert_gen0_pc": pert_gen0_pc,
-        "gen_delta": np.linalg.norm(
-            pert_gen_np[:, 0] - baseline_gen_np[0][None, :, :], axis=-1
-        ),
-        "rate_delta": np.linalg.norm(
-            pert_rates_np[:, 0] - baseline_rates_np[0][None, :, :], axis=-1
-        ),
-        "trial": trial,
-    }
-
-
 def load_lfads_analysis(path):
     from ctd.comparison.analysis.dd.dd import Analysis_DD
 
@@ -709,8 +586,6 @@ latent_delta = np.linalg.norm(pert_lat_np - latents_np[None, :, :, :], axis=-1)
 output_delta = np.linalg.norm(pert_out_np - controlled_np[None, :, :, :], axis=-1)
 
 lfads_data = {}
-lfads_ic_data = {}
-lfads_ic_message = "LFADS IC perturbations unavailable"
 fit_metrics = {}
 if lfads_analysis is not None:
     try:
@@ -790,25 +665,6 @@ if lfads_analysis is not None:
         }
         print("LFADS summary metrics:", fit_metrics)
 
-        if INCLUDE_LFADS_IC_PERTURBATION:
-            try:
-                lfads_ic_data = compute_lfads_ic_perturbation_data(
-                    lfads_analysis,
-                    lfads_trial_idx,
-                    lfads_pca,
-                    N_IC_PERTURBATIONS,
-                    LFADS_IC_PERTURB_SCALE,
-                    IC_PERTURB_MODE,
-                    RANDOM_SEED,
-                )
-                lfads_ic_message = ""
-            except Exception as ic_exc:
-                lfads_ic_data = {}
-                lfads_ic_message = (
-                    "Could not compute LFADS IC perturbations:"
-                    f"\n{type(ic_exc).__name__}: {ic_exc}"
-                )
-
         lfads_data = {
             "spikes": lfads_spikes,
             "true_rates": lfads_true_rates,
@@ -821,7 +677,6 @@ if lfads_analysis is not None:
         }
     except Exception as exc:
         lfads_message = f"Could not load LFADS outputs:\n{type(exc).__name__}: {exc}"
-        lfads_ic_message = lfads_message
 
 
 # %%
@@ -1006,96 +861,8 @@ def panel_ic_perturbations(ax_pc2, ax_pc3, ax_growth):
     ax_growth.legend(frameon=False, loc="best")
 
 
-def panel_lfads_ic_perturbations(ax_pc, ax_growth):
-    ax_pc.set_title(
-        "E  LFADS generator IC perturbations", loc="left", fontweight="bold"
-    )
-    if not INCLUDE_LFADS_IC_PERTURBATION:
-        ax_pc.set_axis_off()
-        ax_growth.set_axis_off()
-        return
-    if not lfads_ic_data:
-        ax_pc.text(
-            0.5,
-            0.5,
-            lfads_ic_message or "LFADS IC perturbations unavailable",
-            ha="center",
-            va="center",
-            wrap=True,
-        )
-        ax_pc.set_axis_off()
-        ax_growth.set_axis_off()
-        return
-
-    t = time_axis(lfads_ic_data["gen_delta"].shape[1])
-    alpha = min(0.7, max(0.08, 3.0 / max(N_IC_PERTURBATIONS, 1)))
-    baseline_pc = lfads_ic_data["baseline_gen_pc"]
-    pert_pc_lfads = lfads_ic_data["pert_gen_pc"]
-    ax_pc.plot(
-        baseline_pc[:, 0], baseline_pc[:, 1], color="0.15", lw=1.5, label="baseline"
-    )
-    ax_pc.scatter(
-        lfads_ic_data["baseline_gen0_pc"][0, 0],
-        lfads_ic_data["baseline_gen0_pc"][0, 1],
-        color="0.15",
-        s=18,
-    )
-    for k in range(pert_pc_lfads.shape[0]):
-        label = f"{pert_pc_lfads.shape[0]} perturbed gen ICs" if k == 0 else None
-        ax_pc.plot(
-            pert_pc_lfads[k, :, 0],
-            pert_pc_lfads[k, :, 1],
-            color="#D62728",
-            lw=0.8,
-            alpha=alpha,
-            label=label,
-        )
-        ax_pc.scatter(
-            lfads_ic_data["pert_gen0_pc"][k, 0],
-            lfads_ic_data["pert_gen0_pc"][k, 1],
-            color="#D62728",
-            s=8,
-            alpha=alpha,
-        )
-    ax_pc.set_xlabel("LFADS PC1")
-    ax_pc.set_ylabel("LFADS PC2")
-    ax_pc.legend(frameon=False, loc="best")
-
-    tt_latent_mean = latent_delta[:, ic_trial_idx].mean(axis=0)
-    lfads_gen_mean = lfads_ic_data["gen_delta"].mean(axis=0)
-    lfads_rate_mean = lfads_ic_data["rate_delta"].mean(axis=0)
-    tt_latent_mean = tt_latent_mean / max(tt_latent_mean[0], 1e-12)
-    lfads_gen_mean = lfads_gen_mean / max(lfads_gen_mean[0], 1e-12)
-    lfads_rate_mean = lfads_rate_mean / max(lfads_rate_mean[0], 1e-12)
-    for k in range(lfads_ic_data["gen_delta"].shape[0]):
-        gen_delta = lfads_ic_data["gen_delta"][k] / max(
-            lfads_ic_data["gen_delta"][k, 0], 1e-12
-        )
-        rate_delta = lfads_ic_data["rate_delta"][k] / max(
-            lfads_ic_data["rate_delta"][k, 0], 1e-12
-        )
-        ax_growth.plot(t, gen_delta, color="#D62728", lw=0.5, alpha=alpha * 0.45)
-        ax_growth.plot(t, rate_delta, color="#FF9896", lw=0.5, alpha=alpha * 0.35)
-    ax_growth.plot(
-        time_axis(tt_latent_mean.shape[0]),
-        tt_latent_mean,
-        color="#9467BD",
-        lw=1.8,
-        label="TT latent",
-    )
-    ax_growth.plot(t, lfads_gen_mean, color="#D62728", lw=1.8, label="LFADS gen")
-    ax_growth.plot(t, lfads_rate_mean, color="#FF9896", lw=1.4, label="LFADS rate")
-    ax_growth.set_yscale("log")
-    ax_growth.set_xlabel(time_xlabel())
-    ax_growth.set_ylabel("normalized norm")
-    ax_growth.set_title("TT vs LFADS perturbation growth")
-    ax_growth.legend(frameon=False, loc="best")
-
-
 def panel_raster(ax_spikes, ax_rates, ax_pred_rates):
-    ax_spikes.set_title(
-        f"{RASTER_PANEL_LABEL}  Simulated spiking data", loc="left", fontweight="bold"
-    )
+    ax_spikes.set_title("E  Simulated spiking data", loc="left", fontweight="bold")
     if lfads_data:
         spikes_for_panel = lfads_data["spikes"]
         true_rates_for_panel = lfads_data["true_rates"]
@@ -1165,9 +932,9 @@ def panel_raster(ax_spikes, ax_rates, ax_pred_rates):
     add_phase_spans(ax_rates, extra_np[trial], alpha=0.08)
     ax_rates.set_title("simulated rates")
     if lfads_data:
-        print(f"Panel {RASTER_PANEL_LABEL} sim rates source: lfads_data['true_rates']")
+        print("Panel E sim rates source: lfads_data['true_rates']")
     else:
-        print(f"Panel {RASTER_PANEL_LABEL} sim rates source: sim_rates")
+        print("Panel E sim rates source: sim_rates")
     ax_rates.set_xlabel(time_xlabel())
     ax_rates.set_ylabel("neuron")
 
@@ -1243,9 +1010,7 @@ def panel_fit_metrics(ax):
 
 
 def panel_lfads(ax_rates, ax_pc):
-    ax_rates.set_title(
-        f"{LFADS_PANEL_LABEL}  LFADS data-trained fit", loc="left", fontweight="bold"
-    )
+    ax_rates.set_title("F  LFADS data-trained fit", loc="left", fontweight="bold")
     if not lfads_data:
         ax_rates.text(
             0.5,
@@ -1354,30 +1119,15 @@ def panel_lfads(ax_rates, ax_pc):
 
 # %%
 # --------------------------- Compose figure ---------------------------
-fig = plt.figure(
-    figsize=(14.5, 13.6 if INCLUDE_LFADS_IC_PERTURBATION else 12.0),
-    constrained_layout=False,
+fig = plt.figure(figsize=(14.5, 12.0), constrained_layout=False)
+outer = GridSpec(
+    5,
+    4,
+    figure=fig,
+    height_ratios=[0.58, 0.82, 0.92, 1.25, 1.2],
+    hspace=0.62,
+    wspace=0.45,
 )
-if INCLUDE_LFADS_IC_PERTURBATION:
-    outer = GridSpec(
-        6,
-        4,
-        figure=fig,
-        height_ratios=[0.58, 0.82, 0.92, 1.25, 1.05, 1.2],
-        hspace=0.66,
-        wspace=0.45,
-    )
-    bottom_row = 5
-else:
-    outer = GridSpec(
-        5,
-        4,
-        figure=fig,
-        height_ratios=[0.58, 0.82, 0.92, 1.25, 1.2],
-        hspace=0.62,
-        wspace=0.45,
-    )
-    bottom_row = 4
 
 ax_task = fig.add_subplot(outer[0, :2])
 ax_io = fig.add_subplot(outer[1, :2], sharex=ax_task)
@@ -1394,12 +1144,7 @@ ax_ic3 = fig.add_subplot(outer[3, 1], projection="3d")
 ax_icg = fig.add_subplot(outer[3, 2:])
 panel_ic_perturbations(ax_ic2, ax_ic3, ax_icg)
 
-if INCLUDE_LFADS_IC_PERTURBATION:
-    ax_lfads_ic_pc = fig.add_subplot(outer[4, :2])
-    ax_lfads_ic_growth = fig.add_subplot(outer[4, 2:])
-    panel_lfads_ic_perturbations(ax_lfads_ic_pc, ax_lfads_ic_growth)
-
-bottom = GridSpecFromSubplotSpec(1, 5, subplot_spec=outer[bottom_row, :], wspace=0.45)
+bottom = GridSpecFromSubplotSpec(1, 5, subplot_spec=outer[4, :], wspace=0.45)
 ax_raster = fig.add_subplot(bottom[0, 0])
 ax_true_rates = fig.add_subplot(bottom[0, 1])
 ax_pred_heatmap = fig.add_subplot(bottom[0, 2])
