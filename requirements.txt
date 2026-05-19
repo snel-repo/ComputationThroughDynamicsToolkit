@@ -7,6 +7,8 @@ wandb
 hydra-core
 gymnasium
 h5py
+numpy>=1.24.0
+scipy
 scikit-learn
 matplotlib
 python-dotenv
@@ -16,6 +18,7 @@ ipykernel
 ipywidgets
 opencv-python
 jax[cpu]
+dsa-metric @ git+https://github.com/mitchellostrow/DSA.git@main
 #torchvision==0.14
 #torchdata==0.5.1
 #torchaudio==0.13.1

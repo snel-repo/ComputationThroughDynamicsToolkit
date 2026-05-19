@@ -411,31 +411,33 @@ def _gaussian_wasserstein(mean_true, cov_true, mean_pred, cov_pred):
 
 class DelayEmbedDistributionMetric:
     """
-    Compare validation trajectory distributions after mapping both into one space.
+    Compare validation trajectory distributions in an observation-derived space.
 
-    The metric optionally bins and smooths trajectories, applies source-specific PCA,
-    constructs a delay embedding, and then linearly maps inferred trajectories into the
-    reference embedding using the training split. It fits a regularized Gaussian to each
-    validation point cloud in that comparison space and reports either Gaussian KL or
-    Gaussian 2-Wasserstein distance.
+    This follows the empirical-data use case for KL/Wasserstein geometry metrics:
+    observations define the comparison space, and model latents enter the metric only
+    after being decoded into observation space. The metric optionally bins and smooths
+    trajectories, fits PCA on the training observations, projects both observations and
+    decoded model activity into that same PCA space, constructs a delay embedding, and
+    then compares regularized Gaussian fits to the validation point clouds with either
+    KL or Gaussian 2-Wasserstein distance.
 
     Assumptions:
-        - training trajectories are time-aligned between reference and inferred data;
+        - model activity has already been projected through the model decoder/readout
+          into the same observation channels as the observations;
         - KL/Wasserstein are computed on Gaussian approximations, not exact empirical
           distributions;
         - raw spikes should usually be binned or smoothed before fitting Gaussians;
-        - when `input_source="spikes"`, the reference side is observed spike counts
-          after temporal preprocessing and the inferred side is the model rate output
-          passed through the same preprocessing.
+        - when `input_source` is "observations" or "spikes", the reference side is
+          observed spike counts and the model side is the model rate output.
 
     Lower values mean the inferred geometry is closer to the reference geometry.
-    `distance_metric="kl"` computes KL(reference || aligned inferred), while
+    `distance_metric="kl"` computes KL(observed || decoded model), while
     `distance_metric="wasserstein"` computes the Gaussian 2-Wasserstein distance.
     """
 
     def __init__(
         self,
-        input_source="latents",
+        input_source="observations",
         distance_metric="wasserstein",
         pca_dim=None,
         n_delays=0,
@@ -459,10 +461,10 @@ class DelayEmbedDistributionMetric:
         self.max_val_samples = max_val_samples
         self.random_state = random_state
 
-        if self.input_source not in {"latents", "rates", "spikes"}:
+        if self.input_source not in {"observations", "rates", "spikes", "latents"}:
             raise ValueError(
                 f"Unsupported input_source '{self.input_source}'. "
-                "Use 'latents', 'rates', or 'spikes'."
+                "Use 'observations', 'rates', 'spikes', or legacy 'latents'."
             )
         if self.distance_metric not in {"kl", "wasserstein"}:
             raise ValueError(
@@ -480,29 +482,83 @@ class DelayEmbedDistributionMetric:
         if self.covariance_reg <= 0:
             raise ValueError("covariance_reg must be positive.")
 
-    def _preprocess_train_val(self, train_array, val_array):
-        train_array = _ensure_traj_array(train_array)
-        val_array = _ensure_traj_array(val_array)
+    def _preprocess_raw(self, array):
+        array = _ensure_traj_array(array)
 
         reduce_mode = "mean" if self.input_source == "latents" else "sum"
-        train_array = _temporal_bin(
-            train_array, self.temporal_bin_size, reduce_mode=reduce_mode
-        )
-        val_array = _temporal_bin(
-            val_array, self.temporal_bin_size, reduce_mode=reduce_mode
+        array = _temporal_bin(array, self.temporal_bin_size, reduce_mode=reduce_mode)
+        return _moving_average(array, self.smoothing_window)
+
+    def _fit_reference_pca(self, true_train, arrays):
+        if self.pca_dim is None:
+            return arrays
+
+        train_flat = _flatten_traj_array(true_train)
+        max_dim = min(self.pca_dim, train_flat.shape[0], train_flat.shape[1])
+        if max_dim < 1:
+            raise ValueError("PCA requires at least one component.")
+
+        pca = PCA(n_components=max_dim)
+        pca.fit(train_flat)
+
+        projected = []
+        for array in arrays:
+            if array.shape[-1] != train_flat.shape[1]:
+                raise ValueError(
+                    "Observation-space KL/Wasserstein requires observations and "
+                    "decoded model activity to have the same channel dimension before "
+                    "PCA. Project model latents through the model decoder/readout "
+                    "before calling this metric."
+                )
+            flat = _flatten_traj_array(array)
+            projected_flat = pca.transform(flat)
+            projected.append(projected_flat.reshape(array.shape[:2] + (max_dim,)))
+        return projected
+
+    def _preprocess_common_space(self, true_train, pred_train, true_val, pred_val):
+        true_train = self._preprocess_raw(true_train)
+        pred_train = self._preprocess_raw(pred_train)
+        true_val = self._preprocess_raw(true_val)
+        pred_val = self._preprocess_raw(pred_val)
+
+        if true_train.shape[-1] != pred_train.shape[-1]:
+            raise ValueError(
+                "Observation-space KL/Wasserstein requires observations and decoded "
+                "model activity to have the same channel dimension. Use "
+                "input_source='latents' only for the legacy aligned-latent metric."
+            )
+
+        true_train, pred_train, true_val, pred_val = self._fit_reference_pca(
+            true_train,
+            [true_train, pred_train, true_val, pred_val],
         )
 
-        train_array = _moving_average(train_array, self.smoothing_window)
-        val_array = _moving_average(val_array, self.smoothing_window)
+        true_train = _delay_embed(true_train, self.n_delays, self.delay_lag)
+        pred_train = _delay_embed(pred_train, self.n_delays, self.delay_lag)
+        true_val = _delay_embed(true_val, self.n_delays, self.delay_lag)
+        pred_val = _delay_embed(pred_val, self.n_delays, self.delay_lag)
+        return true_train, pred_train, true_val, pred_val
 
-        train_array, val_array = _fit_apply_pca(train_array, val_array, self.pca_dim)
-        train_array = _delay_embed(train_array, self.n_delays, self.delay_lag)
-        val_array = _delay_embed(val_array, self.n_delays, self.delay_lag)
-        return train_array, val_array
+    def _preprocess_aligned_latent_space(
+        self, true_train, pred_train, true_val, pred_val
+    ):
+        true_train = self._preprocess_raw(true_train)
+        pred_train = self._preprocess_raw(pred_train)
+        true_val = self._preprocess_raw(true_val)
+        pred_val = self._preprocess_raw(pred_val)
+
+        true_train, true_val = _fit_apply_pca(true_train, true_val, self.pca_dim)
+        pred_train, pred_val = _fit_apply_pca(pred_train, pred_val, self.pca_dim)
+
+        true_train = _delay_embed(true_train, self.n_delays, self.delay_lag)
+        pred_train = _delay_embed(pred_train, self.n_delays, self.delay_lag)
+        true_val = _delay_embed(true_val, self.n_delays, self.delay_lag)
+        pred_val = _delay_embed(pred_val, self.n_delays, self.delay_lag)
+        return true_train, pred_train, true_val, pred_val
 
     def __call__(self, true_train, pred_train, true_val, pred_val):
         if (
-            self.input_source == "spikes"
+            self.input_source in {"observations", "spikes"}
             and self.temporal_bin_size == 1
             and self.smoothing_window == 1
         ):
@@ -513,8 +569,25 @@ class DelayEmbedDistributionMetric:
                 stacklevel=2,
             )
 
-        true_train, true_val = self._preprocess_train_val(true_train, true_val)
-        pred_train, pred_val = self._preprocess_train_val(pred_train, pred_val)
+        if self.input_source == "latents":
+            (
+                true_train,
+                pred_train,
+                true_val,
+                pred_val,
+            ) = self._preprocess_aligned_latent_space(
+                true_train,
+                pred_train,
+                true_val,
+                pred_val,
+            )
+        else:
+            true_train, pred_train, true_val, pred_val = self._preprocess_common_space(
+                true_train,
+                pred_train,
+                true_val,
+                pred_val,
+            )
 
         true_train_flat = _flatten_traj_array(true_train)
         pred_train_flat = _flatten_traj_array(pred_train)
@@ -523,7 +596,7 @@ class DelayEmbedDistributionMetric:
 
         if true_train_flat.shape[0] != pred_train_flat.shape[0]:
             raise ValueError(
-                "Training trajectories must have the same number of aligned samples "
+                "Training trajectories must have the same number of samples "
                 "after preprocessing."
             )
 
@@ -535,14 +608,15 @@ class DelayEmbedDistributionMetric:
             true_val_flat, pred_val_flat, self.max_val_samples, rng
         )
 
-        aligner = LinearRegression()
-        aligner.fit(pred_train_flat, true_train_flat)
-        pred_val_aligned = aligner.predict(pred_val_flat)
+        if self.input_source == "latents":
+            aligner = LinearRegression()
+            aligner.fit(pred_train_flat, true_train_flat)
+            pred_val_flat = aligner.predict(pred_val_flat)
 
         mean_true = np.mean(true_val_flat, axis=0)
-        mean_pred = np.mean(pred_val_aligned, axis=0)
+        mean_pred = np.mean(pred_val_flat, axis=0)
         cov_true = _regularized_covariance(true_val_flat, self.covariance_reg)
-        cov_pred = _regularized_covariance(pred_val_aligned, self.covariance_reg)
+        cov_pred = _regularized_covariance(pred_val_flat, self.covariance_reg)
 
         if self.distance_metric == "kl":
             return _gaussian_kl(mean_true, cov_true, mean_pred, cov_pred)
@@ -559,8 +633,8 @@ def compute_delay_embedding_distribution_metric(
     """
     Thin functional wrapper around DelayEmbedDistributionMetric.
 
-    Lower values indicate that the inferred validation trajectories are closer to the
-    reference validation trajectories in the aligned PCA/delay-embedding space.
+    Lower values indicate that decoded model validation trajectories are closer to
+    validation observations in the observation-derived PCA/delay-embedding space.
     """
 
     metric = DelayEmbedDistributionMetric(**metric_kwargs)

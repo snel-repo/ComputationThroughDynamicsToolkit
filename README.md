@@ -7,19 +7,28 @@ This git repo contains code that will allow users to:
 4. Compare the dynamics of the task-trained and data-driven models with a variety of performance metrics
 
 ## Installation
-We recommend using Conda to run this code. Unfortunately, Ray support for Windows is spotty, so I recommend Linux (or Windows Subsystem for Linux).
+We recommend using Conda to run this code. Ray support for Windows is spotty, so Linux or Windows Subsystem for Linux is recommended.
 
-To create an environment and install the dependencies of the project, run the following commands:
+Create a Python 3.10 environment, clone the repository, and install the toolkit in editable mode:
 
 ```
 git clone https://github.com/snel-repo/ComputationThroughDynamicsToolkit.git
+cd ComputationThroughDynamicsToolkit
 conda create --name CtDEnv python=3.10
 conda activate CtDEnv
-cd ComputationThroughDynamicsToolkit
+python -m pip install --upgrade pip
 pip install -e .
+```
+
+The toolkit imports Dynamical Similarity Analysis as `DSA`. The pip-installable dependency is `dsa-metric`, installed from the upstream DSA GitHub repository by `pip install -e .`. Do not install the unrelated PyPI package named `dsa`. If pip reports `No matching distribution found for dsa`, make sure `requirements.txt` contains `dsa-metric @ git+https://github.com/mitchellostrow/DSA.git@main`, then retry the editable install.
+
+Set `HOME_DIR` in `.env` to the repository root. Include the trailing slash if you edit it by hand, for example:
 
 ```
-Second, navigate to the .env file and modify HOME_DIR to the path where you cloned the environment.
+HOME_DIR=/absolute/path/to/ComputationThroughDynamicsToolkit/
+```
+
+The canonical dataset script now falls back to the repository root if `HOME_DIR` is not set, but the training and analysis modules still expect `.env` to point at the directory where `content/` should be created.
 
 Included in CtdToolkit are three primary external packages:
 

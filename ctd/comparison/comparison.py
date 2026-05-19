@@ -1,3 +1,5 @@
+import warnings
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -214,12 +216,16 @@ class Comparison:
                     elif metric == "wasserstein_geometry":
                         metric_cfg.setdefault("distance_metric", "wasserstein")
 
-                    input_source = metric_cfg.get("input_source", "latents")
-                    if input_source == "latents":
-                        true_train = true_lats_train
-                        true_val = true_lats_val
-                        pred_train = inf_latents_train
-                        pred_val = inf_latents_val
+                    input_source = metric_cfg.get("input_source", "observations")
+                    if input_source in {"observations", "spikes"}:
+                        inp_spikes_train = self.analyses[i].get_spiking(phase="train")
+                        inp_spikes_val_metric = self.analyses[i].get_spiking(
+                            phase="val"
+                        )
+                        true_train = trim_trials(inp_spikes_train, trial_lens_train)
+                        true_val = trim_trials(inp_spikes_val_metric, trial_lens_val)
+                        pred_train = inf_rates_train
+                        pred_val = inf_rates_val
                     elif input_source == "rates":
                         true_rates_train = self.analyses[i].get_true_rates(
                             phase="train"
@@ -231,15 +237,17 @@ class Comparison:
                         true_val = trim_trials(true_rates_val_metric, trial_lens_val)
                         pred_train = inf_rates_train
                         pred_val = inf_rates_val
-                    elif input_source == "spikes":
-                        inp_spikes_train = self.analyses[i].get_spiking(phase="train")
-                        inp_spikes_val_metric = self.analyses[i].get_spiking(
-                            phase="val"
+                    elif input_source == "latents":
+                        warnings.warn(
+                            "input_source='latents' uses latent arrays directly and is "
+                            "not the reviewer-style observation-space KL/Wasserstein "
+                            "metric. Prefer input_source='observations'.",
+                            stacklevel=2,
                         )
-                        true_train = trim_trials(inp_spikes_train, trial_lens_train)
-                        true_val = trim_trials(inp_spikes_val_metric, trial_lens_val)
-                        pred_train = inf_rates_train
-                        pred_val = inf_rates_val
+                        true_train = true_lats_train
+                        true_val = true_lats_val
+                        pred_train = inf_latents_train
+                        pred_val = inf_latents_val
                     else:
                         raise ValueError(
                             f"Unsupported input_source '{input_source}' for {metric}."

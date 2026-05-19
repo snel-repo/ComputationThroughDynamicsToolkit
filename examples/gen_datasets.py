@@ -1,91 +1,104 @@
 import os
 import shutil
+from pathlib import Path
 
 import dotenv
 
 from ctd.comparison.analysis.tt.tt import Analysis_TT
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def get_home_dir():
+    dotenv.load_dotenv(override=True)
+    home_dir = os.environ.get("HOME_DIR")
+    if home_dir is None:
+        return REPO_ROOT
+    return Path(home_dir).expanduser().resolve()
+
+
+def as_analysis_path(path):
+    return str(path) + os.sep
+
 
 def copy_folder_contents(src_folder, dest_folder):
-    # Ensure the destination folder exists
-    os.makedirs(dest_folder, exist_ok=True)
+    src_folder = Path(src_folder)
+    dest_folder = Path(dest_folder)
+    dest_folder.mkdir(parents=True, exist_ok=True)
 
-    # Iterate over all files and directories in the source folder
     for item_name in os.listdir(src_folder):
-        src_item = os.path.join(src_folder, item_name)
-        dest_item = os.path.join(dest_folder, item_name)
+        src_item = src_folder / item_name
+        dest_item = dest_folder / item_name
 
-        # If it's a directory, copy it recursively
-        if os.path.isdir(src_item):
+        if src_item.is_dir():
             shutil.copytree(src_item, dest_item, dirs_exist_ok=True)
         else:
             shutil.copy2(src_item, dest_item)
 
 
-dotenv.load_dotenv(override=True)
-HOME_DIR = os.environ.get("HOME_DIR")
+HOME_DIR = get_home_dir()
 print(HOME_DIR)
 
-tt_3bff_path = HOME_DIR + "pretrained/20241017_NBFF_NoisyGRU_NewFinal/"
-tt_MultiTask_path = HOME_DIR + "pretrained/20241113_MultiTask_NoisyGRU_Final2/"
-tt_RandomTarget_path = HOME_DIR + "pretrained/20241113_RandomTarget_NoisyGRU_Final2/"
-tt_PhaseCodedMemory_path = HOME_DIR + "pretrained/PCM_NoisyGRU_Final/"
+tt_3bff_path = HOME_DIR / "pretrained" / "20241017_NBFF_NoisyGRU_NewFinal"
+tt_MultiTask_path = HOME_DIR / "pretrained" / "20241113_MultiTask_NoisyGRU_Final2"
+tt_RandomTarget_path = HOME_DIR / "pretrained" / "20241113_RandomTarget_NoisyGRU_Final2"
+tt_PhaseCodedMemory_path = HOME_DIR / "pretrained" / "PCM_NoisyGRU_Final"
 tt_ChaoticDelayedMatching_path = (
-    HOME_DIR + "pretrained/20260320_ChaoticDelayedMatching_Final/"
+    HOME_DIR / "pretrained" / "20260320_ChaoticDelayedMatching_Final"
 )
 
-tt_3bff = Analysis_TT(run_name="tt_3bff", filepath=tt_3bff_path)
-tt_MultiTask = Analysis_TT(run_name="tt_MultiTask", filepath=tt_MultiTask_path)
-tt_RandomTarget = Analysis_TT(run_name="tt_RandomTarget", filepath=tt_RandomTarget_path)
-tt_PCM = Analysis_TT(run_name="tt_PhaseCodedMemory", filepath=tt_PhaseCodedMemory_path)
+tt_3bff = Analysis_TT(run_name="tt_3bff", filepath=as_analysis_path(tt_3bff_path))
+tt_MultiTask = Analysis_TT(
+    run_name="tt_MultiTask", filepath=as_analysis_path(tt_MultiTask_path)
+)
+tt_RandomTarget = Analysis_TT(
+    run_name="tt_RandomTarget", filepath=as_analysis_path(tt_RandomTarget_path)
+)
+tt_PCM = Analysis_TT(
+    run_name="tt_PhaseCodedMemory", filepath=as_analysis_path(tt_PhaseCodedMemory_path)
+)
 tt_CDM = Analysis_TT(
     run_name="tt_ChaoticDelayedMatching",
-    filepath=tt_ChaoticDelayedMatching_path,
+    filepath=as_analysis_path(tt_ChaoticDelayedMatching_path),
 )
 
 # Make copies of the pretrained models to the trained_models folder
 # if the folders don't already exist
-path_3bff = HOME_DIR + "content/trained_models/task-trained/tt_3bff/"
-path_MultiTask = HOME_DIR + "content/trained_models/task-trained/tt_MultiTask/"
-path_RandomTarget = HOME_DIR + "content/trained_models/task-trained/tt_RandomTarget/"
+path_3bff = HOME_DIR / "content" / "trained_models" / "task-trained" / "tt_3bff"
+path_MultiTask = (
+    HOME_DIR / "content" / "trained_models" / "task-trained" / "tt_MultiTask"
+)
+path_RandomTarget = (
+    HOME_DIR / "content" / "trained_models" / "task-trained" / "tt_RandomTarget"
+)
 path_PhaseCodedMemory = (
-    HOME_DIR + "content/trained_models/task-trained/tt_PhaseCodedMemory/"
+    HOME_DIR / "content" / "trained_models" / "task-trained" / "tt_PhaseCodedMemory"
 )
 path_ChaoticDelayedMatching = (
-    HOME_DIR + "content/trained_models/task-trained/tt_ChaoticDelayedMatching/"
+    HOME_DIR
+    / "content"
+    / "trained_models"
+    / "task-trained"
+    / "tt_ChaoticDelayedMatching"
 )
 
-if not os.path.exists(path_3bff):
-    copy_folder_contents(
-        tt_3bff_path, HOME_DIR + "content/trained_models/task-trained/tt_3bff/"
-    )
+if not path_3bff.exists():
+    copy_folder_contents(tt_3bff_path, path_3bff)
 
-if not os.path.exists(path_MultiTask):
-    copy_folder_contents(
-        tt_MultiTask_path,
-        HOME_DIR + "content/trained_models/task-trained/tt_MultiTask/",
-    )
+if not path_MultiTask.exists():
+    copy_folder_contents(tt_MultiTask_path, path_MultiTask)
 
-if not os.path.exists(path_RandomTarget):
-    copy_folder_contents(
-        tt_RandomTarget_path,
-        HOME_DIR + "content/trained_models/task-trained/tt_RandomTarget/",
-    )
+if not path_RandomTarget.exists():
+    copy_folder_contents(tt_RandomTarget_path, path_RandomTarget)
 
-if not os.path.exists(path_PhaseCodedMemory):
-    copy_folder_contents(
-        tt_PhaseCodedMemory_path,
-        HOME_DIR + "content/trained_models/task-trained/tt_PhaseCodedMemory/",
-    )
+if not path_PhaseCodedMemory.exists():
+    copy_folder_contents(tt_PhaseCodedMemory_path, path_PhaseCodedMemory)
 
-if not os.path.exists(path_ChaoticDelayedMatching):
-    copy_folder_contents(
-        tt_ChaoticDelayedMatching_path,
-        HOME_DIR + "content/trained_models/task-trained/tt_ChaoticDelayedMatching/",
-    )
+if not path_ChaoticDelayedMatching.exists():
+    copy_folder_contents(tt_ChaoticDelayedMatching_path, path_ChaoticDelayedMatching)
 
 # Generate simulated datasets
-dataset_path = HOME_DIR + "content/datasets/dd/"
+dataset_path = HOME_DIR / "content" / "datasets" / "dd"
 
 tt_3bff.simulate_neural_data(
     subfolder="max_epochs=500 n_samples=1000 latent_size=64 seed=0 learning_rate=0.001",

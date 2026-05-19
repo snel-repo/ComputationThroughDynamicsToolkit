@@ -158,9 +158,13 @@ def build_parser():
     )
     parser.add_argument(
         "--input-source",
-        choices=["latents", "rates", "spikes"],
-        default="latents",
-        help="Signal to compare after alignment into the common space.",
+        choices=["observations", "spikes", "rates", "latents"],
+        default="observations",
+        help=(
+            "Reference signal defining the common delay-embedding space. "
+            "'observations'/'spikes' compare observed spikes to model rates; "
+            "'rates' compares true rates to model rates."
+        ),
     )
     parser.add_argument(
         "--pca-dim",

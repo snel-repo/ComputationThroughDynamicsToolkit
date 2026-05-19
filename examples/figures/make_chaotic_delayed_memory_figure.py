@@ -1,9 +1,9 @@
 # %%
-"""Paper-quality summary figure for the Chaotic Delayed Memory task.
+"""Paper-quality summary figure for the Chaotic Delayed Matching task.
 
 Run this file as a script or cell-by-cell in an editor that supports ``# %%``.
 The local benchmark/config name is ``ChaoticDelayedMatching``; figure text uses
-"Chaotic Delayed Memory" by default because this is the manuscript-facing name.
+"Chaotic Delayed Matching" by default because this is the manuscript-facing name.
 """
 
 import importlib
@@ -28,7 +28,7 @@ from ctd.comparison.analysis.tt.tt import Analysis_TT
 # %%
 # --------------------------- User parameters ---------------------------
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TASK_NAME_FOR_FIGURE = "Chaotic Delayed Memory"
+TASK_NAME_FOR_FIGURE = "Chaotic Delayed Matching"
 TT_RUN_PATH = (
     REPO_ROOT
     / "content"
@@ -42,7 +42,7 @@ LFADS_RUN_PATH = (
     / "prefix=tt_ChaoticDelayedMatching_max_epochs=1000"
 )
 OUTPUT_DIR = REPO_ROOT / "content" / "figures"
-OUTPUT_STEM = "chaotic_delayed_memory_summary"
+OUTPUT_STEM = "chaotic_delayed_matching_summary"
 
 PHASE = "all"
 EXAMPLE_TRIAL = (
