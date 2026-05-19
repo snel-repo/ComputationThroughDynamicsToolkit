@@ -6,10 +6,10 @@ import dotenv
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from DSA.stats import dsa_bw_data_splits, dsa_to_id
 from sklearn.decomposition import PCA
 
 from ctd.comparison.analysis.analysis import Analysis
+from ctd.comparison.dsa_compat import dsa_bw_data_splits, dsa_to_id
 from ctd.comparison.fixedpoints import find_fixed_points
 from ctd.comparison.metrics import compute_input_lyaps, compute_jacobians, compute_lyaps
 
