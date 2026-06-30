@@ -1,8 +1,14 @@
 exclude: 'examples/run_task_training\.py'
 
+# Pin the Python used to build hook environments. Without this, pre-commit infers
+# the version from the launching interpreter's name; on envs whose `python3.1`
+# symlink shadows `python3.10` it mis-detects "python3.1" and virtualenv fails.
+default_language_version:
+  python: python3.10
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.4.0
+    rev: v6.0.0
     hooks:
       # list of supported hooks: https://pre-commit.com/hooks.html
       - id: trailing-whitespace
@@ -13,27 +19,27 @@ repos:
 
   # python code formatting
   - repo: https://github.com/psf/black
-    rev: 22.3.0
+    rev: 26.5.1
     hooks:
       - id: black
 
   # python import sorting
   - repo: https://github.com/PyCQA/isort
-    rev: 5.8.0
+    rev: 5.13.2
     hooks:
       - id: isort
         args: ["--profile", "black"]
 
   # yaml formatting
   - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v2.3.0
+    rev: v3.1.0
     hooks:
       - id: prettier
         types: [yaml]
 
   # python code analysis
   - repo: https://github.com/PyCQA/flake8
-    rev: 3.9.2
+    rev: 7.3.0
     hooks:
       - id: flake8
         args: ["--max-line-length", "88", "--extend-ignore", "E203"]
