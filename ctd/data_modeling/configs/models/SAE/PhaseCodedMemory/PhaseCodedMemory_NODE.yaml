@@ -17,3 +17,8 @@ vf_num_layers: 6
 lr: 1e-3
 
 weight_decay: 0
+
+# Init the Poisson log-rate readout bias to per-neuron log mean rate so low
+# firing-rate data starts training near the empirical mean rate instead of
+# ~1 spike/bin.
+rate_bias_init: True

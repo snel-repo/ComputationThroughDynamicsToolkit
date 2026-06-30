@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 import torch
 from torch import nn
 
-from .loss_func import LossFunc, PoissonLossFunc
+from .loss_func import LossFunc, MultiTaskPoissonLossFunc, PoissonLossFunc
 
 
 class RNN(nn.Module):
@@ -48,6 +48,7 @@ class NODELatentSAE(pl.LightningModule):
         vf_hidden_size: int,
         vf_num_layers: int,
         loss_func: LossFunc = PoissonLossFunc(),
+        rate_bias_init: bool = False,
     ):
         super().__init__()
         # Instantiate bidirectional GRU encoder
@@ -102,6 +103,47 @@ class NODELatentSAE(pl.LightningModule):
         )
         return optimizer
 
+    def on_fit_start(self):
+        """Initialize the rate readout bias to the per-neuron log mean rate.
+
+        With a Poisson loss the readout outputs log-rates (rate = exp(readout)),
+        so a default Kaiming-init readout predicts rates near 1 spike/bin for
+        every neuron. For low firing-rate data (e.g. PhaseCodedMemory) that
+        starts training far from the correct domain and destabilizes it. Setting
+        the bias to ``log(mean spikes/bin)`` starts each neuron at its marginal
+        mean rate.
+
+        Unlike NODELatentSAESmallReadout (which sets a single static bias for
+        all neurons), this uses each neuron's empirical mean. Only runs at the
+        start of fresh training (not when resuming) and only under a Poisson
+        loss, so existing saved models are unaffected.
+        """
+        # Opt-in via config; defaults to off
+        if not getattr(self.hparams, "rate_bias_init", False):
+            return
+        # Only Poisson losses use the log-rate (exp) link
+        if not isinstance(self.loss_func, (PoissonLossFunc, MultiTaskPoissonLossFunc)):
+            return
+        # Don't clobber a learned bias when resuming training
+        if self.global_step > 0:
+            return
+        bias = getattr(self.readout, "bias", None)
+        if bias is None:
+            return
+
+        datamodule = self.trainer.datamodule
+        if datamodule is None or not hasattr(datamodule, "train_ds"):
+            return
+        # TensorDataset tensors: (encod, recon_data, inputs, ...); recon is index 1
+        recon_data = datamodule.train_ds.tensors[1]
+        if recon_data.shape[-1] != bias.numel():
+            return
+
+        mean_counts = recon_data.reshape(-1, recon_data.shape[-1]).float().mean(dim=0)
+        log_rates = torch.log(mean_counts.clamp_min(1e-4))
+        with torch.no_grad():
+            bias.copy_(log_rates.to(bias.device, bias.dtype))
+
     def training_step(self, batch, batch_ix):
 
         spikes, recon_spikes, inputs, extra, *_ = batch
@@ -143,3 +185,28 @@ class NODELatentSAE(pl.LightningModule):
         self.log("valid/loss_all", loss)
 
         return loss
+
+
+class NODELatentSAESmallReadout(NODELatentSAE):
+    """NODE SAE variant that initializes the linear readout to small values.
+
+    The readout maps latents to log-rates (PoissonLossFunc takes log-input). For
+    datasets with very low per-bin firing rates (e.g. ~0.02 spikes/bin at 10 ms
+    bins on PhaseCodedMemory) the default Kaiming-uniform init produces
+    log-rates centred near 0 (rates near 1), so the model has to climb out of a
+    deep loss basin before it can fit the data. Scaling the readout weights
+    down and setting the bias to log(target_rate) starts the network close to
+    the empirical mean rate, which speeds and stabilizes training.
+    """
+
+    def __init__(
+        self,
+        readout_weight_scale: float = 0.01,
+        readout_bias_init: float = -4.0,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.save_hyperparameters()
+        with torch.no_grad():
+            self.readout.weight.mul_(readout_weight_scale)
+            self.readout.bias.fill_(readout_bias_init)

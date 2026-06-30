@@ -21,6 +21,30 @@ All models must meet a few requirements
 """
 
 
+class _StateUpdateCell(nn.Module):
+    """Adapter exposing an inline-recurrence RNN's deterministic state update.
+
+    The comparison analyses (fixed-point search, Jacobian / Lyapunov
+    estimation) expect a ``cell`` module with the signature
+    ``(inputs, hidden) -> next_hidden`` -- the same contract that ``GRUCell``
+    satisfies for the GRU-family models. RNNs that compute their recurrence
+    inline in ``forward`` (and return ``(output, hidden)``) have no such cell,
+    so this adapter wraps the parent module and forwards to its deterministic
+    ``state_update`` (noise excluded), returning only the next hidden state.
+
+    The parent is registered as a submodule so that ``.parameters()`` and
+    ``.to(device)`` -- which the analyses call on the cell -- behave as
+    expected.
+    """
+
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
+
+    def forward(self, inputs, hidden):
+        return self.parent.state_update(inputs, hidden)
+
+
 class GRU_RNN(nn.Module):
     def __init__(
         self, latent_size, input_size=None, output_size=None, latent_ic_var=0.05
@@ -207,12 +231,25 @@ class DriscollRNN(nn.Module):
         self.bias = nn.Parameter(torch.zeros(self.latent_size))
         self.readout = nn.Linear(self.latent_size, output_size, bias=True)
 
+    def state_update(self, inputs, hidden, noise_level=0.0):
+        """Deterministic ``(inputs, hidden) -> next_hidden`` recurrence map.
+
+        Noise is added only when ``noise_level > 0``; the comparison analyses
+        call this through :attr:`cell` with the default (deterministic) so the
+        Jacobian / fixed-point search sees the noiseless flow.
+        """
+        pre = self.recW(hidden) + self.inpW(inputs) + self.bias
+        if noise_level > 0:
+            pre = pre + torch.randn_like(pre) * noise_level
+        return (1 - self.gamma) * self.recW(hidden) + self.gamma * self.act_func(pre)
+
+    @property
+    def cell(self):
+        return _StateUpdateCell(self)
+
     def forward(self, inputs, hidden):
-        noise = torch.randn_like(hidden) * self.noise_level
         output = self.readout(hidden)
-        hidden = (1 - self.gamma) * self.recW(hidden) + self.gamma * self.act_func(
-            self.recW(hidden) + self.inpW(inputs) + self.bias + noise
-        )
+        hidden = self.state_update(inputs, hidden, noise_level=self.noise_level)
         return output, hidden
 
 
@@ -286,13 +323,27 @@ class ChaoticVanillaRNN(nn.Module):
             self.recW.weight.normal_(mean=0.0, std=rec_std)
             self.inpW.weight.normal_(mean=0.0, std=1.0 / (self.input_size**0.5))
 
-    def forward(self, inputs, hidden):
+    def state_update(self, inputs, hidden, noise_level=0.0):
+        """Deterministic ``(inputs, hidden) -> next_hidden`` recurrence map.
+
+        Noise is added only when ``noise_level > 0``; the comparison analyses
+        call this through :attr:`cell` with the default (deterministic) so the
+        Jacobian / fixed-point search sees the noiseless flow.
+        """
         pre = self.recW(hidden) + self.inpW(inputs) + self.bias
-        if self.noise_level > 0:
-            pre = pre + torch.randn_like(pre) * self.noise_level
+        if noise_level > 0:
+            pre = pre + torch.randn_like(pre) * noise_level
         hidden = self.act(pre)
         if self.hidden_clip is not None:
             hidden = torch.clamp(hidden, -self.hidden_clip, self.hidden_clip)
+        return hidden
+
+    @property
+    def cell(self):
+        return _StateUpdateCell(self)
+
+    def forward(self, inputs, hidden):
+        hidden = self.state_update(inputs, hidden, noise_level=self.noise_level)
         output = self.readout(hidden)
         return output, hidden
 
@@ -376,16 +427,31 @@ class ChaoticRateRNN(nn.Module):
                 self.inpW.weight.normal_(mean=0.0, std=1.0 / (self.input_size**0.5))
         self.inpW.weight.requires_grad = self.input_trainable
 
-    def forward(self, inputs, hidden):
+    def state_update(self, inputs, hidden, noise_level=0.0):
+        """Deterministic ``(inputs, hidden) -> next_hidden`` recurrence map.
+
+        This is the leaky-rate update used by :meth:`forward`, with the
+        stochastic drive term excluded by default. The comparison analyses
+        (fixed-point search, Jacobian / Lyapunov estimation) call this through
+        :attr:`cell` so they operate on the noiseless flow.
+        """
         rates = self.act(hidden)
         drive = self.recW(rates) + self.inpW(inputs)
         if self.bias is not None:
             drive = drive + self.bias
-        if self.noise_level > 0:
-            drive = drive + torch.randn_like(drive) * self.noise_level
+        if noise_level > 0:
+            drive = drive + torch.randn_like(drive) * noise_level
         hidden = (1.0 - self.alpha) * hidden + self.alpha * drive
         if self.hidden_clip is not None:
             hidden = torch.clamp(hidden, -self.hidden_clip, self.hidden_clip)
+        return hidden
+
+    @property
+    def cell(self):
+        return _StateUpdateCell(self)
+
+    def forward(self, inputs, hidden):
+        hidden = self.state_update(inputs, hidden, noise_level=self.noise_level)
         output = self.readout(self.act(hidden))
         return output, hidden
 
@@ -496,15 +562,29 @@ class EIChaoticRNN(nn.Module):
             self.readout.bias.zero_()
         self.inpW.weight.requires_grad = self.input_trainable
 
-    def forward(self, inputs, hidden):
+    def state_update(self, inputs, hidden, noise_level=0.0):
+        """Deterministic ``(inputs, hidden) -> next_hidden`` recurrence map.
+
+        Applies the Dale-constrained recurrent update with the stochastic drive
+        term excluded by default, so the comparison analyses reach it through
+        :attr:`cell` and see the noiseless flow.
+        """
         rates = self._rates(hidden)
         rec_eff = torch.abs(self.rec_weight) * self.rec_sign * self.rec_mask
         drive = torch.matmul(rates, rec_eff.t()) + self.inpW(inputs)
-        if self.noise_level > 0:
-            drive = drive + torch.randn_like(drive) * self.noise_level
+        if noise_level > 0:
+            drive = drive + torch.randn_like(drive) * noise_level
         hidden = (1.0 - self.alpha) * hidden + self.alpha * drive
         if self.hidden_clip is not None:
             hidden = torch.clamp(hidden, -self.hidden_clip, self.hidden_clip)
+        return hidden
+
+    @property
+    def cell(self):
+        return _StateUpdateCell(self)
+
+    def forward(self, inputs, hidden):
+        hidden = self.state_update(inputs, hidden, noise_level=self.noise_level)
 
         rates_out = self._rates(hidden)
         if hasattr(self.readout, "weight"):

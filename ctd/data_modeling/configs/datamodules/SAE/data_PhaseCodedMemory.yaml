@@ -10,6 +10,6 @@ noise_dict:
   obs_noise: pseudoPoisson
   dispersion: 1.0
 seed: 0
-batch_size: 128
+batch_size: 1000
 num_workers: 4
 provide_inputs: True

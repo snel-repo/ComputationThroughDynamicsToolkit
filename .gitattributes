@@ -12,3 +12,4 @@ pretrained/20241113_MultiTask_NoisyGRU_Final2/datamodule_train.pkl filter=lfs di
 pretrained/20241113_MultiTask_NoisyGRU_Final2/model.pkl filter=lfs diff=lfs merge=lfs -text
 pretrained/20241113_MultiTask_NoisyGRU_Final2/simulator.pkl filter=lfs diff=lfs merge=lfs -text
 pretrained/**/*.pkl filter=lfs diff=lfs merge=lfs -text
+examples/walkthrough_models/**/*.pkl filter=lfs diff=lfs merge=lfs -text

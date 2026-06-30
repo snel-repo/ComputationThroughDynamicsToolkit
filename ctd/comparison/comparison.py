@@ -1,4 +1,4 @@
-import warnings
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -104,17 +104,22 @@ class Comparison:
 
         # Iterate through the analyses
         for i in range(self.num_analyses):
-            print("")
-            print(
-                f"Working on {i+1} of {self.num_analyses}: {self.analyses[i].run_name}"
-            )
-
             if i == ref_ind:  # Skip the task-trained network
+                print(
+                    f"[compute_metrics] skipping reference analysis "
+                    f"{i + 1}/{self.num_analyses}: {self.analyses[i].run_name}",
+                    flush=True,
+                )
                 continue
 
-            metrics_dict["run_name"].append(self.analyses[i].run_name)
-            metrics_dict["group"].append(self.groups[i])
+            t_analysis = time.perf_counter()
+            print(
+                f"[compute_metrics] {i + 1}/{self.num_analyses}: "
+                f"{self.analyses[i].run_name} — fetching model outputs",
+                flush=True,
+            )
 
+            t0 = time.perf_counter()
             n_input_neurons = self.analyses[i].get_inputs()[0].shape[-1]
             inf_rates_train, inf_latents_train = self.analyses[i].get_model_outputs(
                 phase="train"
@@ -124,6 +129,13 @@ class Comparison:
             )
             true_rates_val = self.analyses[i].get_true_rates(phase="val")
             inp_spikes_val = self.analyses[i].get_spiking(phase="val")
+            print(
+                f"[compute_metrics]   model-output fetch in "
+                f"{time.perf_counter() - t0:.1f}s "
+                f"(train latents: {tuple(inf_latents_train.shape)}, "
+                f"val latents: {tuple(inf_latents_val.shape)})",
+                flush=True,
+            )
 
             if unequal_trial_lens:
                 inf_rates_train_list = []
@@ -151,14 +163,27 @@ class Comparison:
 
             # Check that latents arenot NaN
             if np.isnan(inf_latents_train.detach().numpy()).any():
+                print(
+                    f"[compute_metrics]   skipping {self.analyses[i].run_name}: "
+                    f"NaNs in train latents",
+                    flush=True,
+                )
                 continue
+
+            # Only record this analysis once we know we'll compute its metrics —
+            # otherwise NaN-skipped runs leave orphan run_name/group entries and
+            # downstream consumers see length-mismatched columns.
+            metrics_dict["run_name"].append(self.analyses[i].run_name)
+            metrics_dict["group"].append(self.groups[i])
+
             for j, metric in enumerate(metric_dict_list):
+                t_metric = time.perf_counter()
                 if metric == "rate_r2":
                     rate_r2 = get_signal_r2(
                         signal_true=true_rates_val,
                         signal_pred=inf_rates_val,
                     )
-                    print(f"Rate R2: {rate_r2}")
+                    print(f"    Rate R2: {rate_r2}", flush=True)
                     metrics_dict["rate_r2"].append(rate_r2)
 
                 elif metric == "recon_r2":
@@ -168,7 +193,7 @@ class Comparison:
                         signal_true_val=true_lats_val,
                         signal_pred_val=inf_latents_val,
                     )
-                    print(f"Recon R2: {recon_r2}")
+                    print(f"    Recon R2: {recon_r2}", flush=True)
                     metrics_dict["recon_r2"].append(recon_r2)
 
                 elif metric == "input_r2":
@@ -192,7 +217,7 @@ class Comparison:
                         signal_true_val=true_inputs_val,
                         signal_pred_val=inf_inputs_val,
                     )
-                    print(f"Input R2: {input_r2}")
+                    print(f"    Input R2: {input_r2}", flush=True)
                     metrics_dict["input_r2"].append(input_r2)
 
                 elif metric in ["state_r2"]:
@@ -202,7 +227,7 @@ class Comparison:
                         signal_true_val=true_lats_val,
                         signal_pred_val=inf_latents_val,
                     )
-                    print(f"State R2: {state_r2}")
+                    print(f"    State R2: {state_r2}", flush=True)
                     metrics_dict["state_r2"].append(state_r2)
 
                 elif metric in [
@@ -214,7 +239,7 @@ class Comparison:
                     if metric == "kl_geometry":
                         metric_cfg.setdefault("distance_metric", "kl")
                     elif metric == "wasserstein_geometry":
-                        metric_cfg.setdefault("distance_metric", "wasserstein")
+                        metric_cfg.setdefault("distance_metric", "cdf_wasserstein")
 
                     input_source = metric_cfg.get("input_source", "observations")
                     if input_source in {"observations", "spikes"}:
@@ -226,31 +251,11 @@ class Comparison:
                         true_val = trim_trials(inp_spikes_val_metric, trial_lens_val)
                         pred_train = inf_rates_train
                         pred_val = inf_rates_val
-                    elif input_source == "rates":
-                        true_rates_train = self.analyses[i].get_true_rates(
-                            phase="train"
-                        )
-                        true_rates_val_metric = self.analyses[i].get_true_rates(
-                            phase="val"
-                        )
-                        true_train = trim_trials(true_rates_train, trial_lens_train)
-                        true_val = trim_trials(true_rates_val_metric, trial_lens_val)
-                        pred_train = inf_rates_train
-                        pred_val = inf_rates_val
-                    elif input_source == "latents":
-                        warnings.warn(
-                            "input_source='latents' uses latent arrays directly and is "
-                            "not the reviewer-style observation-space KL/Wasserstein "
-                            "metric. Prefer input_source='observations'.",
-                            stacklevel=2,
-                        )
-                        true_train = true_lats_train
-                        true_val = true_lats_val
-                        pred_train = inf_latents_train
-                        pred_val = inf_latents_val
                     else:
                         raise ValueError(
-                            f"Unsupported input_source '{input_source}' for {metric}."
+                            f"Unsupported input_source '{input_source}' for {metric}. "
+                            "Only 'observations'/'spikes' (observed spikes vs predicted "
+                            "rates) is supported."
                         )
 
                     geometry_score = compute_delay_embedding_distribution_metric(
@@ -260,10 +265,11 @@ class Comparison:
                         pred_val=pred_val,
                         **metric_cfg,
                     )
-                    metric_name = metric_cfg.get("distance_metric", "wasserstein")
+                    metric_name = metric_cfg.get("distance_metric", "cdf_wasserstein")
                     print(
-                        "Delay-Embed "
-                        f"{metric_name.title()} ({input_source}): {geometry_score}"
+                        f"    Delay-Embed {metric_name.title()} ({input_source}): "
+                        f"{geometry_score}",
+                        flush=True,
                     )
                     metrics_dict[metric].append(geometry_score)
 
@@ -274,7 +280,7 @@ class Comparison:
                         inf_rates=inf_rates_co.detach().numpy(),
                         true_spikes=spiking_co,
                     )
-                    print(f"CO-BPS: {bps}")
+                    print(f"    CO-BPS: {bps}", flush=True)
                     metrics_dict["co-bps"].append(bps)
                 elif metric in ["cycle_con"]:
                     cycle_con_var = metric_dict_list[metric].get(
@@ -287,7 +293,9 @@ class Comparison:
                         inf_rates_val=inf_rates_val.detach().numpy(),
                         variance_threshold=cycle_con_var,
                     )
-                    print(f"Cycle Consistency R2: {linear_cycle_con}")
+                    print(
+                        f"    Cycle Consistency R2: {linear_cycle_con}", flush=True
+                    )
                     metrics_dict["cycle_con"].append(linear_cycle_con)
                 elif metric in ["nl_cycle_con"]:
                     hidden_sizes = metric_dict_list[metric].get(
@@ -319,7 +327,10 @@ class Comparison:
                         weight_decay=weight_decay,
                         device=device,
                     )
-                    print(f"Nonlinear Cycle Consistency R2: {nl_cycle_con}")
+                    print(
+                        f"    Nonlinear Cycle Consistency R2: {nl_cycle_con}",
+                        flush=True,
+                    )
                     metrics_dict["nl_cycle_con"].append(nl_cycle_con)
 
                 elif metric in ["mmd"]:
@@ -335,20 +346,37 @@ class Comparison:
                         feature_types=feature_types,
                         max_pairwise_samples=max_pairwise_samples,
                     )
-                    print(f"MMD: {mmd}")
+                    print(f"    MMD: {mmd}", flush=True)
                     metrics_dict["mmd"].append(mmd)
 
                 elif metric in ["lyapunov"]:
-                    lyap_mean, lyap_std = self.analyses[i].compute_lyapunov_exp()
+                    lyap_kwargs = dict(metric_dict_list[metric])
+                    lyap_mean, lyap_std = self.analyses[i].compute_lyapunov_exp(
+                        **lyap_kwargs
+                    )
                     lyap_mean = lyap_mean.detach().numpy()
                     lyap_std = lyap_std.detach().numpy()
                     print(
-                        f"Lyapunov Exponent: {lyap_mean[0]:.6f} +/- {lyap_std[0]:.6f}"
+                        f"    Lyapunov Exponent: "
+                        f"{lyap_mean[0]:.6f} +/- {lyap_std[0]:.6f}",
+                        flush=True,
                     )
                     metrics_dict["lyapunov"].append(lyap_mean)
 
                 else:
                     raise ValueError("Invalid metric")
+
+                print(
+                    f"[compute_metrics]   {metric:<22s} "
+                    f"in {time.perf_counter() - t_metric:.1f}s",
+                    flush=True,
+                )
+
+            print(
+                f"[compute_metrics] {self.analyses[i].run_name} total: "
+                f"{time.perf_counter() - t_analysis:.1f}s",
+                flush=True,
+            )
 
         return metrics_dict
 
@@ -742,7 +770,12 @@ class Comparison:
         _, _, targets = self.analyses[self.ref_ind].get_model_inputs(phase="val")
         mean_r2 = []
         for i in range(self.num_analyses):
-            print(f"Working on {i+1} of {self.num_analyses}")
+            print(
+                f"\rWorking on {i + 1} of {self.num_analyses}: "
+                f"{self.analyses[i].run_name}",
+                end="",
+                flush=True,
+            )
             latents = self.analyses[i].get_latents(phase="val").detach().numpy()
             lats_flat = latents.reshape(
                 latents.shape[0] * latents.shape[1], latents.shape[2]
@@ -753,23 +786,39 @@ class Comparison:
             reg = LinearRegression().fit(lats_flat, targets_flat)
             pred = reg.predict(lats_flat)
             r2_perf = r2_score(targets_flat, pred, multioutput="raw_values")
-            print(f"Performance R2s for {self.analyses[i].run_name} is {r2_perf}")
             mean_r2.append(np.mean(r2_perf))
+        # Finalize the in-place "Working on …" line.
+        print()
 
-        # Find the mean in each group
+        # Find the mean in each group, ignoring models whose performance R2 is
+        # non-finite (e.g. a data-trained model whose latents diverged to NaN/Inf).
+        mean_r2 = np.asarray(mean_r2, dtype=float)
         mean_in_group = []
         for group in np.unique(self.groups):
             group_inds = np.where(self.groups == group)[0]
-            mean_in_group.append(np.mean([mean_r2[i] for i in group_inds]))
+            group_vals = mean_r2[group_inds]
+            finite_vals = group_vals[np.isfinite(group_vals)]
+            if finite_vals.size == 0:
+                print(f"\nWarning: all performance R2 values for group '{group}' are "
+                      "non-finite; plotting as NaN.")
+                mean_in_group.append(np.nan)
+            else:
+                if finite_vals.size < group_vals.size:
+                    print(f"\nWarning: dropped {group_vals.size - finite_vals.size} "
+                          f"non-finite performance R2 value(s) from group '{group}'.")
+                mean_in_group.append(np.mean(finite_vals))
 
+        mean_in_group = np.asarray(mean_in_group, dtype=float)
         fig = plt.figure(figsize=(10, 5))
         ax = fig.add_subplot(111)
         ax.bar(np.arange(len(np.unique(self.groups))), mean_in_group)
         ax.set_xticks(np.arange(len(np.unique(self.groups))))
         ax.set_xticklabels(np.unique(self.groups))
-        minVal = np.min(mean_in_group) - 0.05
-        maxVal = np.max(mean_in_group) + 0.05
-        ax.set_ylim([minVal, maxVal])
+        finite_means = mean_in_group[np.isfinite(mean_in_group)]
+        if finite_means.size > 0:
+            minVal = np.min(finite_means) - 0.05
+            maxVal = np.max(finite_means) + 0.05
+            ax.set_ylim([minVal, maxVal])
         ax.set_ylabel("Mean R2 of Performance in group")
         ax.set_title("Performance of data-trained models at task (R2)")
 
@@ -874,9 +923,11 @@ class Comparison:
 
         for i in range(self.num_analyses):
             print(
-                f"Working on {i+1} of {self.num_analyses}: {self.analyses[i].run_name}"
+                f"\rWorking on {i + 1} of {self.num_analyses}: "
+                f"{self.analyses[i].run_name} (group: {self.groups[i]})",
+                end="",
+                flush=True,
             )
-            print(f"Group: {self.groups[i]}")
             if i == ref_ind:
                 continue
             rates, latents = self.analyses[i].get_model_outputs(phase=phase)
@@ -923,10 +974,8 @@ class Comparison:
                 signal_pred=true_inputs,
             )
 
-            print(f"Rate R2: {rate_state_inp_mat[i, 0]}")
-            print(f"State R2: {rate_state_inp_mat[i, 1]}")
-            print(f"Input R2 (toInf): {rate_state_inp_mat[i, 2]}")
-            print(f"Input R2 (toTrue): {rate_state_inp_mat[i, 3]}")
+        # Finalize the in-place "Working on …" line.
+        print()
 
         # Sort results by the groups
         num_groups = len(np.unique(self.groups))

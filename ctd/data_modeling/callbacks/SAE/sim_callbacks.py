@@ -134,7 +134,11 @@ class TrajectoryPlotModels(pl.Callback):
             The model currently being trained.
         """
         # Skip evaluation for most epochs to save time
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
 
         # Check for the TensorBoard SummaryWriter
@@ -226,7 +230,11 @@ class RasterPlot(pl.Callback):
         pl_module : pytorch_lightning.LightningModule
             The model currently being trained.
         """
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
 
         # Check for the TensorBoard SummaryWriter
@@ -296,7 +304,11 @@ class TrajectoryPlot(pl.Callback):
             The model currently being trained.
         """
         # Skip evaluation for most epochs to save time
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
 
         # Check for the TensorBoard SummaryWriter
@@ -350,7 +362,11 @@ class LatentRegressionPlot(pl.Callback):
             The model currently being trained.
         """
         # Skip evaluation for most epochs to save time
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
         # Check for the TensorBoard SummaryWriter
         logger = trainer.loggers[2]
@@ -416,7 +432,11 @@ class WarpingVisualizationPlot(pl.Callback):
             The model currently being trained.
         """
         # Skip evaluation for most epochs to save time
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
 
         num_to_plot = np.arange(trainer.datamodule.obs_dim)
@@ -477,7 +497,11 @@ class TrajectoryPlotOverTimeCallback(pl.Callback):
     def on_validation_epoch_end(self, trainer, pl_module):
 
         # Skip evaluation for most epochs to save time
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
         # Check for the TensorBoard SummaryWriter
         logger = trainer.loggers[2]
@@ -527,7 +551,11 @@ class AvgFiringRateCallback(pl.Callback):
 
     def on_validation_epoch_end(self, trainer, pl_module):
         # Skip evaluation for most epochs to save time
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
         # Check for the TensorBoard SummaryWriter
         logger = trainer.loggers[2]
@@ -559,7 +587,11 @@ class RateLatentMatchCallback(pl.Callback):
     def on_validation_epoch_end(self, trainer, pl_module):
 
         # Skip evaluation for most epochs to save time
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
         # Check for the TensorBoard SummaryWriter
         logger = trainer.loggers[2]
@@ -628,7 +660,11 @@ class InputsPlot(pl.Callback):
         pl_module : pytorch_lightning.LightningModule
             The model currently being trained.
         """
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
 
         # Check for the TensorBoard SummaryWriter
@@ -682,7 +718,11 @@ class DTMetricsCallback(pl.Callback):
         pl_module : pytorch_lightning.LightningModule
             The model currently being trained.
         """
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
 
         # Get inputs for plotting
@@ -763,7 +803,11 @@ class ChaoticDelayedMatchingLyapunovCallback(pl.Callback):
         self._lyapunov_history = []
 
     def on_validation_epoch_end(self, trainer, pl_module):
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
 
         dataloader = trainer.datamodule.val_dataloader()

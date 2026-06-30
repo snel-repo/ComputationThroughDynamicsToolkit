@@ -101,7 +101,7 @@ class TaskTrainedWrapper(pl.LightningModule):
         self._configure_model_readout()
 
     def _get_single_neuron_readout_idx(self) -> int:
-        if self._single_neuron_readout_idx is None:
+        if getattr(self, "_single_neuron_readout_idx", None) is None:
             if self.output_size != 1:
                 raise ValueError(
                     "single_neuron_readout currently supports output_size == 1"
@@ -120,11 +120,15 @@ class TaskTrainedWrapper(pl.LightningModule):
     def _configure_model_readout(self):
         if self.model is None or self.task_env is None:
             return
+        default_readout = getattr(self, "_default_model_readout", None)
+        if default_readout is None and self.model is not None:
+            default_readout = getattr(self.model, "readout", None)
+            self._default_model_readout = default_readout
         if getattr(self.task_env, "single_neuron_readout", False):
             idx = self._get_single_neuron_readout_idx()
             self.model.readout = FixedSingleNeuronReadout(idx)
-        elif self._default_model_readout is not None:
-            self.model.readout = self._default_model_readout
+        elif default_readout is not None:
+            self.model.readout = default_readout
 
     def configure_optimizers(self):
         """Configure the optimizer"""

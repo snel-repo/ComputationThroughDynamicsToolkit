@@ -11,7 +11,13 @@ from sklearn.decomposition import PCA
 from ctd.comparison.analysis.analysis import Analysis
 from ctd.comparison.dsa_compat import dsa_bw_data_splits, dsa_to_id
 from ctd.comparison.fixedpoints import find_fixed_points
-from ctd.comparison.metrics import compute_input_lyaps, compute_jacobians, compute_lyaps
+from ctd.comparison.metrics import (
+    compute_input_lyaps,
+    compute_jacobians,
+    compute_lyapunov_spectrum,
+    compute_lyaps,
+    kaplan_yorke_dimension,
+)
 
 dotenv.load_dotenv(override=True)
 HOME_DIR = os.getenv("HOME_DIR")
@@ -259,6 +265,7 @@ class Analysis_TT(Analysis):
         device="cpu",
         seed=0,
         compute_jacobians=True,
+        zero_inputs=False,
     ):
         # Compute latent activity from task trained model
         if inputs is None and noiseless:
@@ -269,6 +276,9 @@ class Analysis_TT(Analysis):
             latents = self.get_latents()
         else:
             latents = self.get_latents()
+        # Optionally find fixed points of the unforced (zero-input) dynamics.
+        if zero_inputs:
+            inputs = torch.zeros_like(inputs)
         if hasattr(self.wrapper.model, "generator"):
             cell = self.wrapper.model.generator
         else:
@@ -287,6 +297,60 @@ class Analysis_TT(Analysis):
         )
         return fps
 
+    def compute_FPs_batched(
+        self,
+        noiseless=True,
+        inputs=None,
+        n_inits=4096,
+        batch_size=1024,
+        noise_scale=0.0,
+        learning_rate=1e-3,
+        max_iters=10000,
+        device=None,
+        seed=0,
+        compute_jacobians=True,
+        log_every=500,
+        zero_inputs=False,
+    ):
+        """GPU-friendly batched FP search.
+
+        Same semantics as :meth:`compute_FPs` but uses
+        :func:`find_fixed_points_batched`, which chunks ``n_inits`` into
+        mini-batches of ``batch_size`` so large init counts fit in GPU memory.
+        ``device`` defaults to CUDA when available, else CPU.
+        """
+        from ctd.comparison.fixedpoints import find_fixed_points_batched
+
+        if inputs is None and noiseless:
+            _, inputs, _ = self.get_model_inputs_noiseless()
+            latents = self.get_latents_noiseless()
+        elif inputs is None and not noiseless:
+            _, inputs, _ = self.get_model_inputs()
+            latents = self.get_latents()
+        else:
+            latents = self.get_latents()
+        # Optionally find fixed points of the unforced (zero-input) dynamics.
+        if zero_inputs:
+            inputs = torch.zeros_like(inputs)
+        if hasattr(self.wrapper.model, "generator"):
+            cell = self.wrapper.model.generator
+        else:
+            cell = self.wrapper.model.cell
+        return find_fixed_points_batched(
+            model=cell,
+            state_trajs=latents,
+            inputs=inputs,
+            n_inits=n_inits,
+            batch_size=batch_size,
+            noise_scale=noise_scale,
+            learning_rate=learning_rate,
+            max_iters=max_iters,
+            device=device,
+            seed=seed,
+            compute_jacobians=compute_jacobians,
+            log_every=log_every,
+        )
+
     def plot_fps(
         self,
         inputs=None,
@@ -299,6 +363,7 @@ class Analysis_TT(Analysis):
         seed=0,
         compute_jacobians=True,
         q_thresh=1e-5,
+        zero_inputs=False,
     ):
 
         latents = self.get_latents(phase="val").detach().numpy()
@@ -311,6 +376,7 @@ class Analysis_TT(Analysis):
             device=device,
             seed=seed,
             compute_jacobians=compute_jacobians,
+            zero_inputs=zero_inputs,
         )
         xstar = fps.xstar
         q_vals = fps.qstar
@@ -464,7 +530,13 @@ class Analysis_TT(Analysis):
 
         return len_list
 
-    def compute_lyapunov_exp(self, phase="val", n_trials=None, input_lyaps=False):
+    def compute_lyapunov_exp(
+        self,
+        phase="val",
+        n_trials=None,
+        input_lyaps=False,
+        subset_frac=None,
+    ):
         # Get the latent activity
         outputs = self.get_model_outputs(phase=phase)
         latents = outputs["latents"]
@@ -481,7 +553,15 @@ class Analysis_TT(Analysis):
             cell = self.wrapper.model.generator
         else:
             cell = self.wrapper.model.cell
-        #
+
+        # Translate subset_frac into a concrete trial count when n_trials wasn't set
+        if n_trials is None and subset_frac is not None:
+            if not 0 < subset_frac <= 1:
+                raise ValueError(
+                    f"subset_frac must be in (0, 1]; got {subset_frac}"
+                )
+            n_trials = max(1, int(round(subset_frac * latents.shape[0])))
+
         # Compute the Jacobians
         Jz, Ju, trial_idx = compute_jacobians(
             z=latents,
@@ -490,7 +570,7 @@ class Analysis_TT(Analysis):
             num_trials=n_trials,
         )
 
-        # Compute the Lyapunov exponents
+        # Compute the Lyapunov exponents (full spectrum, descending order)
         les = compute_lyaps(
             Js=Jz,
             dt=1,
@@ -504,3 +584,84 @@ class Analysis_TT(Analysis):
             )
             les = torch.cat((les, les_u), dim=-1)
         return les.mean(0), les.std(0)
+
+    def compute_lyapunov_spectrum(
+        self,
+        phase="val",
+        n_trials=None,
+        subset_frac=None,
+        return_summary=False,
+    ):
+        """Full Lyapunov spectrum of the task-trained dynamics.
+
+        Unlike :meth:`compute_lyapunov_exp`, which is typically summarized by
+        its maximal entry, this returns the complete spectrum (all exponents,
+        in descending order) averaged across trials, together with its
+        across-trial standard deviation. The full spectrum characterizes
+        stability beyond the maximal exponent: its sum is the mean rate of
+        phase-space volume contraction, so a chaotic system (positive maximal
+        exponent) can still describe an attracting set when the sum is
+        negative.
+
+        Parameters
+        ----------
+        phase : str
+            Data split to evaluate ("train", "val", or "all").
+        n_trials : int, optional
+            Number of trials to sample for the Jacobian estimate.
+        subset_frac : float, optional
+            Fraction of trials to use when ``n_trials`` is not given.
+        return_summary : bool, optional
+            If True, also return a dict with the maximal exponent ("max"), the
+            sum of exponents ("sum"), and the Kaplan-Yorke dimension
+            ("kaplan_yorke_dim"), computed on the trial-averaged spectrum.
+
+        Returns
+        -------
+        spectrum_mean : torch.Tensor
+            Per-exponent mean across trials (descending order), shape ``(D,)``.
+        spectrum_std : torch.Tensor
+            Per-exponent across-trial standard deviation, shape ``(D,)``.
+        summary : dict, optional
+            Returned only when ``return_summary`` is True.
+        """
+        outputs = self.get_model_outputs(phase=phase)
+        latents = outputs["latents"]
+        states = outputs["states"]
+        inputs = self.get_model_inputs(phase=phase)[1]
+        if states is not None:
+            combined_in = torch.cat([states, inputs], dim=-1)
+        else:
+            combined_in = inputs
+
+        if hasattr(self.wrapper.model, "generator"):
+            cell = self.wrapper.model.generator
+        else:
+            cell = self.wrapper.model.cell
+
+        if n_trials is None and subset_frac is not None:
+            if not 0 < subset_frac <= 1:
+                raise ValueError(
+                    f"subset_frac must be in (0, 1]; got {subset_frac}"
+                )
+            n_trials = max(1, int(round(subset_frac * latents.shape[0])))
+
+        Jz, _, _ = compute_jacobians(
+            z=latents,
+            u=combined_in,
+            f=cell,
+            num_trials=n_trials,
+        )
+
+        spectrum = compute_lyapunov_spectrum(Js=Jz, dt=1)
+        spectrum_mean = spectrum.mean(0)
+        spectrum_std = spectrum.std(0)
+        if return_summary:
+            mean_np = spectrum_mean.detach().cpu().numpy()
+            summary = {
+                "max": float(mean_np[0]),
+                "sum": float(mean_np.sum()),
+                "kaplan_yorke_dim": kaplan_yorke_dimension(mean_np),
+            }
+            return spectrum_mean, spectrum_std, summary
+        return spectrum_mean, spectrum_std

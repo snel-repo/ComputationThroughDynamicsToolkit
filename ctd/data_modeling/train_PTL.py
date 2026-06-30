@@ -7,12 +7,33 @@ from typing import List
 import dotenv
 import hydra
 import pytorch_lightning as pl
+import torch.nn.utils.parametrize as parametrize
 
 from ctd.data_modeling.extensions.SAE.utils import flatten
 
 dotenv.load_dotenv(override=True)
 
 log = logging.getLogger(__name__)
+
+
+def _bake_parametrizations(model):
+    """Remove parametrizations so the trained model can be pickled.
+
+    Manifold-constrained readouts (e.g. StiefelLinear, via geotorch) register a
+    weight parametrization that raises on pickling -- geotorch only supports
+    state_dict serialization. Training is finished by the time we save, so we
+    bake each constrained weight into a plain Parameter at its current
+    (orthonormal) value with ``leave_parametrized=True``. The materialized
+    weight is identical, so downstream inference/analysis is unaffected.
+    """
+    for module in model.modules():
+        if not parametrize.is_parametrized(module):
+            continue
+        # Copy because removing a parametrization mutates the dict we iterate
+        for tensor_name in list(module.parametrizations):
+            parametrize.remove_parametrizations(
+                module, tensor_name, leave_parametrized=True
+            )
 
 
 def train_PTL(
@@ -128,6 +149,9 @@ def train_PTL(
     datamodule_path = os.path.join(save_path, "datamodule.pkl")
 
     model = model.to("cpu")
+    # Bake in any manifold-constrained weights (e.g. StiefelLinear) so the
+    # model can be pickled -- geotorch parametrizations are not picklable.
+    _bake_parametrizations(model)
     with open(model_path, "wb") as f:
         pickle.dump(model, f)
 

@@ -51,6 +51,8 @@ examples/dev/*
 !/examples/png/*.png
 !/pretrained/**/*.pkl
 /pretrained/old/
+# Walkthrough tutorial models (tracked via git LFS, see .gitattributes)
+!/examples/walkthrough_models/**/*.pkl
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.

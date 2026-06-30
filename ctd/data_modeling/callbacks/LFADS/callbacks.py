@@ -259,7 +259,11 @@ class RasterPlot(pl.Callback):
         pl_module : pytorch_lightning.LightningModule
             The model currently being trained.
         """
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
         # Check for any image loggers
         if not has_image_loggers(trainer.loggers):
@@ -336,7 +340,11 @@ class ChaoticDelayedMatchingRasterPlot(pl.Callback):
         self.log_every_n_epochs = log_every_n_epochs
 
     def on_validation_epoch_end(self, trainer, pl_module):
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
         if self.split == "valid":
             dataloader = trainer.datamodule.val_dataloader()
@@ -434,7 +442,11 @@ class TrajectoryPlot(pl.Callback):
             The model currently being trained.
         """
         # Skip evaluation for most epochs to save time
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
         # Check for any image loggers
         if not has_image_loggers(trainer.loggers):
@@ -504,7 +516,11 @@ class CondAvgTrajectoryPlot(pl.Callback):
             The model currently being trained.
         """
         # Skip evaluation for most epochs to save time
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
         # Check for any image loggers
         if not has_image_loggers(trainer.loggers):
@@ -582,7 +598,11 @@ class DTMetricsCallback(pl.Callback):
         pl_module : pytorch_lightning.LightningModule
             The model currently being trained.
         """
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
         # Check for any image loggers
         if not has_image_loggers(trainer.loggers):
@@ -706,7 +726,11 @@ class ChaoticDelayedMatchingLyapunovCallback(pl.Callback):
         self._lyapunov_history = []
 
     def on_validation_epoch_end(self, trainer, pl_module):
-        if (trainer.current_epoch % self.log_every_n_epochs) != 0:
+        if (
+            getattr(trainer, "sanity_checking", False)
+            or trainer.current_epoch == 0
+            or (trainer.current_epoch % self.log_every_n_epochs) != 0
+        ):
             return
         can_log_images = has_image_loggers(trainer.loggers)
 

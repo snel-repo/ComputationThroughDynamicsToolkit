@@ -92,6 +92,61 @@ class Analysis_DD(ABC, Analysis):
         self.model.to(m_device)
         return fps
 
+    def compute_FPs_batched(
+        self,
+        noiseless=True,
+        inputs=None,
+        n_inits=4096,
+        batch_size=1024,
+        noise_scale=0.0,
+        learning_rate=1e-3,
+        max_iters=10000,
+        device=None,
+        seed=0,
+        compute_jacobians=True,
+        log_every=500,
+    ):
+        """GPU-friendly batched FP search.
+
+        Same semantics as :meth:`compute_FPs` but uses
+        :func:`find_fixed_points_batched`, which chunks ``n_inits`` into
+        mini-batches of ``batch_size`` so large init counts fit in GPU memory.
+        ``device`` defaults to CUDA when available, else CPU. Delegates
+        through :meth:`get_dynamics_model` so the LFADS (or other DD) model
+        is wrapped to its generator-only forward.
+        """
+        import torch as _torch
+
+        from ctd.comparison.fixedpoints import find_fixed_points_batched
+
+        if inputs is None and noiseless:
+            _, inputs = self.get_model_inputs()
+            latents = self.get_latents()
+        else:
+            latents = self.get_latents()
+        m_device = self.model.device
+        target_device = (
+            device
+            if device is not None
+            else ("cuda" if _torch.cuda.is_available() else "cpu")
+        )
+        fps = find_fixed_points_batched(
+            model=self.get_dynamics_model(),
+            state_trajs=latents,
+            inputs=inputs,
+            n_inits=n_inits,
+            batch_size=batch_size,
+            noise_scale=noise_scale,
+            learning_rate=learning_rate,
+            max_iters=max_iters,
+            device=target_device,
+            seed=seed,
+            compute_jacobians=compute_jacobians,
+            log_every=log_every,
+        )
+        self.model.to(m_device)
+        return fps
+
     def plot_fps(
         self,
         inputs=None,
@@ -265,14 +320,22 @@ class Analysis_DD(ABC, Analysis):
         plt.savefig(f"{self.run_name}_scree_plot.pdf")
         return exp_var_ext
 
-    def compute_lyapunov_exp(self, phase="val", n_trials=None):
+    def compute_lyapunov_exp(self, phase="val", n_trials=None, subset_frac=None):
         # Get the latent activity
         latents = self.get_latents(phase=phase)
         # Get the inputs
         inputs = self.get_inputs(phase=phase)
         # Get the flow-field model
         cell = self.get_dynamics_model()
-        #
+
+        # Translate subset_frac into a concrete trial count when n_trials wasn't set
+        if n_trials is None and subset_frac is not None:
+            if not 0 < subset_frac <= 1:
+                raise ValueError(
+                    f"subset_frac must be in (0, 1]; got {subset_frac}"
+                )
+            n_trials = max(1, int(round(subset_frac * latents.shape[0])))
+
         # Compute the Jacobians
         Jz, Ju, trial_idx = compute_jacobians(
             z=latents,

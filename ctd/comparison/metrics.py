@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from scipy.spatial.distance import pdist
+from scipy.stats import wasserstein_distance
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
@@ -304,25 +305,6 @@ def _moving_average(array, window_size):
     return (cumsum[:, window_size:, :] - cumsum[:, :-window_size, :]) / window_size
 
 
-def _fit_apply_pca(train_array, val_array, pca_dim):
-    if pca_dim is None:
-        return train_array, val_array
-
-    train_flat = _flatten_traj_array(train_array)
-    val_flat = _flatten_traj_array(val_array)
-    max_dim = min(pca_dim, train_flat.shape[0], train_flat.shape[1])
-    if max_dim < 1:
-        raise ValueError("PCA requires at least one component.")
-
-    pca = PCA(n_components=max_dim)
-    train_pca = pca.fit_transform(train_flat)
-    val_pca = pca.transform(val_flat)
-
-    train_shape = train_array.shape[:2] + (max_dim,)
-    val_shape = val_array.shape[:2] + (max_dim,)
-    return train_pca.reshape(train_shape), val_pca.reshape(val_shape)
-
-
 def _delay_embed(array, n_delays, delay_lag):
     if n_delays <= 0:
         return array
@@ -350,102 +332,123 @@ def _paired_subsample(true_array, pred_array, max_samples, rng):
     return true_array[inds], pred_array[inds]
 
 
-def _symmetrize(matrix):
-    return 0.5 * (matrix + matrix.T)
+def _marginal_histogram_kl(true_samples, pred_samples, n_bins=50, eps=1e-12):
+    """Average per-dimension empirical KL(true || pred) across dimensions.
+
+    Mirrors `_marginal_cdf_wasserstein`: each dimension is treated independently
+    rather than fitting a joint multivariate distribution. For dimension d, both
+    sample sets are binned over a shared range, converted to additively-smoothed
+    probability mass functions, and KL(true || pred) is accumulated, then averaged
+    across dimensions. This is a sum of marginal KL divergences, not a joint
+    multivariate KL.
+    """
+    true_samples = np.asarray(true_samples)
+    pred_samples = np.asarray(pred_samples)
+    if true_samples.shape[1] != pred_samples.shape[1]:
+        raise ValueError(
+            "true and pred samples must have the same number of dimensions."
+        )
+
+    dim = true_samples.shape[1]
+    kls = np.empty(dim, dtype=float)
+    for d in range(dim):
+        true_d = true_samples[:, d]
+        pred_d = pred_samples[:, d]
+        lo = float(min(true_d.min(), pred_d.min()))
+        hi = float(max(true_d.max(), pred_d.max()))
+        if hi <= lo:
+            # Degenerate (constant) dimension with identical support -> no divergence.
+            kls[d] = 0.0
+            continue
+        bins = np.linspace(lo, hi, n_bins + 1)
+        p, _ = np.histogram(true_d, bins=bins)
+        q, _ = np.histogram(pred_d, bins=bins)
+        p = p.astype(float) + eps
+        q = q.astype(float) + eps
+        p /= p.sum()
+        q /= q.sum()
+        kls[d] = float(np.sum(p * np.log(p / q)))
+    return float(np.mean(kls))
 
 
-def _regularized_covariance(array, covariance_reg):
-    dim = array.shape[1]
-    if array.shape[0] <= 1:
-        return np.eye(dim, dtype=np.float64) * max(covariance_reg, 1e-8)
+def _marginal_cdf_wasserstein(true_samples, pred_samples, eps=1e-12):
+    """Average normalized 1D empirical Wasserstein-1 distance across dimensions.
 
-    cov = np.cov(array, rowvar=False)
-    if np.ndim(cov) == 0:
-        cov = np.array([[float(cov)]], dtype=np.float64)
-    cov = _symmetrize(np.asarray(cov, dtype=np.float64))
-    diag_scale = float(np.trace(cov) / max(dim, 1))
-    if not np.isfinite(diag_scale) or diag_scale <= 0:
-        diag_scale = 1.0
-    cov += np.eye(dim, dtype=np.float64) * (covariance_reg * diag_scale)
-    return cov
+    This is the marginal CDF-based Wasserstein distance from Patel & Ott, Chaos
+    2023 (arXiv:2207.00521); see also the broader dynamical-systems-reconstruction
+    review of Durstewitz et al., Nat. Rev. Neurosci. 2023. The Wasserstein-1
+    distance is computed independently for each dimension of the flattened point
+    clouds, normalized by the range of the true samples in that dimension, and
+    averaged. It is a sum of 1D optimal transport distances between marginals, not
+    a joint multivariate optimal transport distance.
+    """
+    true_samples = np.asarray(true_samples)
+    pred_samples = np.asarray(pred_samples)
+    if true_samples.shape[1] != pred_samples.shape[1]:
+        raise ValueError(
+            "true and pred samples must have the same number of dimensions."
+        )
 
-
-def _matrix_sqrt_psd(matrix):
-    eigvals, eigvecs = np.linalg.eigh(_symmetrize(matrix))
-    eigvals = np.clip(eigvals, 0.0, None)
-    return (eigvecs * np.sqrt(eigvals)) @ eigvecs.T
-
-
-def _matrix_inv_psd(matrix, min_eig=1e-12):
-    eigvals, eigvecs = np.linalg.eigh(_symmetrize(matrix))
-    eigvals = np.clip(eigvals, min_eig, None)
-    return (eigvecs * (1.0 / eigvals)) @ eigvecs.T
-
-
-def _safe_logdet_psd(matrix, min_eig=1e-12):
-    eigvals = np.linalg.eigvalsh(_symmetrize(matrix))
-    eigvals = np.clip(eigvals, min_eig, None)
-    return float(np.sum(np.log(eigvals)))
-
-
-def _gaussian_kl(mean_true, cov_true, mean_pred, cov_pred):
-    dim = mean_true.shape[0]
-    cov_pred_inv = _matrix_inv_psd(cov_pred)
-    mean_diff = (mean_pred - mean_true)[:, None]
-    trace_term = np.trace(cov_pred_inv @ cov_true)
-    mahal_term = float(mean_diff.T @ cov_pred_inv @ mean_diff)
-    logdet_term = _safe_logdet_psd(cov_pred) - _safe_logdet_psd(cov_true)
-    return float(0.5 * (trace_term + mahal_term - dim + logdet_term))
-
-
-def _gaussian_wasserstein(mean_true, cov_true, mean_pred, cov_pred):
-    mean_term = float(np.sum((mean_true - mean_pred) ** 2))
-    cov_true = _symmetrize(cov_true)
-    cov_pred = _symmetrize(cov_pred)
-    pred_sqrt = _matrix_sqrt_psd(cov_pred)
-    inner = _symmetrize(pred_sqrt @ cov_true @ pred_sqrt)
-    sqrt_inner = _matrix_sqrt_psd(inner)
-    cov_term = np.trace(cov_true + cov_pred - 2.0 * sqrt_inner)
-    return float(np.sqrt(max(mean_term + cov_term, 0.0)))
+    dim = true_samples.shape[1]
+    normalized = np.empty(dim, dtype=float)
+    for d in range(dim):
+        true_d = true_samples[:, d]
+        pred_d = pred_samples[:, d]
+        wd_d = wasserstein_distance(true_d, pred_d)
+        true_range = float(np.max(true_d) - np.min(true_d))
+        normalized[d] = 2.0 * wd_d / (true_range + eps)
+    return float(np.mean(normalized))
 
 
 class DelayEmbedDistributionMetric:
     """
     Compare validation trajectory distributions in an observation-derived space.
 
-    This follows the empirical-data use case for KL/Wasserstein geometry metrics:
-    observations define the comparison space, and model latents enter the metric only
-    after being decoded into observation space. The metric optionally bins and smooths
-    trajectories, fits PCA on the training observations, projects both observations and
-    decoded model activity into that same PCA space, constructs a delay embedding, and
-    then compares regularized Gaussian fits to the validation point clouds with either
-    KL or Gaussian 2-Wasserstein distance.
+    This follows the empirical-data use case for the geometry metrics: observed
+    spikes define the comparison space, and model rates enter the metric as the
+    decoded model activity in those same observation channels. The metric optionally
+    bins and smooths trajectories, fits PCA on the training observations, projects
+    both observed spikes and model rates into that same PCA space, constructs a delay
+    embedding, and then compares the validation point clouds with a marginal
+    (per-dimension) empirical distance.
+
+    The only supported comparison is observed spikes (reference) versus predicted
+    rates (model); `input_source` selects the naming of that observed signal but both
+    accepted values behave identically.
 
     Assumptions:
         - model activity has already been projected through the model decoder/readout
-          into the same observation channels as the observations;
-        - KL/Wasserstein are computed on Gaussian approximations, not exact empirical
-          distributions;
-        - raw spikes should usually be binned or smoothed before fitting Gaussians;
-        - when `input_source` is "observations" or "spikes", the reference side is
-          observed spike counts and the model side is the model rate output.
+          into the same observation channels as the observed spikes;
+        - distances are computed per dimension on empirical marginals, then averaged,
+          rather than fitting a joint multivariate distribution;
+        - raw spikes should usually be binned or smoothed before comparison.
 
     Lower values mean the inferred geometry is closer to the reference geometry.
-    `distance_metric="kl"` computes KL(observed || decoded model), while
-    `distance_metric="wasserstein"` computes the Gaussian 2-Wasserstein distance.
+    Supported `distance_metric` options:
+        - "cdf_wasserstein": average normalized 1D empirical Wasserstein-1 / CDF
+          distance across dimensions (per Patel & Ott, Chaos 2023,
+          arXiv:2207.00521; cf. the DSR review of Durstewitz et al., Nat. Rev.
+          Neurosci. 2023). Each dimension's Wasserstein-1 distance is normalized by
+          the range of the true validation data in that dimension, then averaged.
+          This is a sum of marginal optimal transport distances, not a joint
+          multivariate one.
+        - "kl": average per-dimension empirical KL(observed || decoded model). Each
+          dimension is binned over a shared range into smoothed PMFs and the marginal
+          KL divergences are averaged. This is a sum of marginal KLs, not a joint
+          multivariate KL.
+        - "wasserstein": deprecated alias for "cdf_wasserstein".
     """
 
     def __init__(
         self,
         input_source="observations",
-        distance_metric="wasserstein",
+        distance_metric="cdf_wasserstein",
         pca_dim=None,
         n_delays=0,
         delay_lag=1,
         temporal_bin_size=1,
         smoothing_window=1,
-        covariance_reg=1e-5,
-        max_train_samples=50000,
+        n_bins=50,
         max_val_samples=50000,
         random_state=0,
     ):
@@ -456,20 +459,29 @@ class DelayEmbedDistributionMetric:
         self.delay_lag = int(delay_lag)
         self.temporal_bin_size = int(temporal_bin_size)
         self.smoothing_window = int(smoothing_window)
-        self.covariance_reg = float(covariance_reg)
-        self.max_train_samples = max_train_samples
+        self.n_bins = int(n_bins)
         self.max_val_samples = max_val_samples
         self.random_state = random_state
 
-        if self.input_source not in {"observations", "rates", "spikes", "latents"}:
+        if self.input_source not in {"observations", "spikes"}:
             raise ValueError(
                 f"Unsupported input_source '{self.input_source}'. "
-                "Use 'observations', 'rates', 'spikes', or legacy 'latents'."
+                "Only 'observations'/'spikes' (observed spikes vs predicted rates) "
+                "is supported."
             )
-        if self.distance_metric not in {"kl", "wasserstein"}:
+        if self.distance_metric == "wasserstein":
+            warnings.warn(
+                "distance_metric='wasserstein' is deprecated; use "
+                "'cdf_wasserstein' for the marginal CDF-Wasserstein distance.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.distance_metric = "cdf_wasserstein"
+        if self.distance_metric not in {"kl", "cdf_wasserstein"}:
             raise ValueError(
                 f"Unsupported distance_metric '{self.distance_metric}'. "
-                "Use 'kl' or 'wasserstein'."
+                "Use 'kl' or 'cdf_wasserstein' (legacy 'wasserstein' is also "
+                "accepted)."
             )
         if self.delay_lag < 1:
             raise ValueError("delay_lag must be >= 1.")
@@ -479,14 +491,12 @@ class DelayEmbedDistributionMetric:
             raise ValueError("temporal_bin_size must be >= 1.")
         if self.smoothing_window < 1:
             raise ValueError("smoothing_window must be >= 1.")
-        if self.covariance_reg <= 0:
-            raise ValueError("covariance_reg must be positive.")
+        if self.n_bins < 1:
+            raise ValueError("n_bins must be >= 1.")
 
     def _preprocess_raw(self, array):
         array = _ensure_traj_array(array)
-
-        reduce_mode = "mean" if self.input_source == "latents" else "sum"
-        array = _temporal_bin(array, self.temporal_bin_size, reduce_mode=reduce_mode)
+        array = _temporal_bin(array, self.temporal_bin_size, reduce_mode="sum")
         return _moving_average(array, self.smoothing_window)
 
     def _fit_reference_pca(self, true_train, arrays):
@@ -523,9 +533,9 @@ class DelayEmbedDistributionMetric:
 
         if true_train.shape[-1] != pred_train.shape[-1]:
             raise ValueError(
-                "Observation-space KL/Wasserstein requires observations and decoded "
-                "model activity to have the same channel dimension. Use "
-                "input_source='latents' only for the legacy aligned-latent metric."
+                "Observation-space distances require observed spikes and decoded "
+                "model rates to have the same channel dimension. Project model "
+                "latents through the model decoder/readout before calling this metric."
             )
 
         true_train, pred_train, true_val, pred_val = self._fit_reference_pca(
@@ -539,88 +549,33 @@ class DelayEmbedDistributionMetric:
         pred_val = _delay_embed(pred_val, self.n_delays, self.delay_lag)
         return true_train, pred_train, true_val, pred_val
 
-    def _preprocess_aligned_latent_space(
-        self, true_train, pred_train, true_val, pred_val
-    ):
-        true_train = self._preprocess_raw(true_train)
-        pred_train = self._preprocess_raw(pred_train)
-        true_val = self._preprocess_raw(true_val)
-        pred_val = self._preprocess_raw(pred_val)
-
-        true_train, true_val = _fit_apply_pca(true_train, true_val, self.pca_dim)
-        pred_train, pred_val = _fit_apply_pca(pred_train, pred_val, self.pca_dim)
-
-        true_train = _delay_embed(true_train, self.n_delays, self.delay_lag)
-        pred_train = _delay_embed(pred_train, self.n_delays, self.delay_lag)
-        true_val = _delay_embed(true_val, self.n_delays, self.delay_lag)
-        pred_val = _delay_embed(pred_val, self.n_delays, self.delay_lag)
-        return true_train, pred_train, true_val, pred_val
-
     def __call__(self, true_train, pred_train, true_val, pred_val):
-        if (
-            self.input_source in {"observations", "spikes"}
-            and self.temporal_bin_size == 1
-            and self.smoothing_window == 1
-        ):
+        if self.temporal_bin_size == 1 and self.smoothing_window == 1:
             warnings.warn(
                 "Comparing raw spikes without binning or smoothing can produce noisy "
-                "Gaussian fits. Set temporal_bin_size > 1 or smoothing_window > 1 "
-                "for more stable comparisons.",
+                "marginal distributions. Set temporal_bin_size > 1 or "
+                "smoothing_window > 1 for more stable comparisons.",
                 stacklevel=2,
             )
 
-        if self.input_source == "latents":
-            (
-                true_train,
-                pred_train,
-                true_val,
-                pred_val,
-            ) = self._preprocess_aligned_latent_space(
-                true_train,
-                pred_train,
-                true_val,
-                pred_val,
-            )
-        else:
-            true_train, pred_train, true_val, pred_val = self._preprocess_common_space(
-                true_train,
-                pred_train,
-                true_val,
-                pred_val,
-            )
+        true_train, pred_train, true_val, pred_val = self._preprocess_common_space(
+            true_train,
+            pred_train,
+            true_val,
+            pred_val,
+        )
 
-        true_train_flat = _flatten_traj_array(true_train)
-        pred_train_flat = _flatten_traj_array(pred_train)
         true_val_flat = _flatten_traj_array(true_val)
         pred_val_flat = _flatten_traj_array(pred_val)
 
-        if true_train_flat.shape[0] != pred_train_flat.shape[0]:
-            raise ValueError(
-                "Training trajectories must have the same number of samples "
-                "after preprocessing."
-            )
-
         rng = np.random.RandomState(self.random_state)
-        true_train_flat, pred_train_flat = _paired_subsample(
-            true_train_flat, pred_train_flat, self.max_train_samples, rng
-        )
         true_val_flat, pred_val_flat = _paired_subsample(
             true_val_flat, pred_val_flat, self.max_val_samples, rng
         )
 
-        if self.input_source == "latents":
-            aligner = LinearRegression()
-            aligner.fit(pred_train_flat, true_train_flat)
-            pred_val_flat = aligner.predict(pred_val_flat)
-
-        mean_true = np.mean(true_val_flat, axis=0)
-        mean_pred = np.mean(pred_val_flat, axis=0)
-        cov_true = _regularized_covariance(true_val_flat, self.covariance_reg)
-        cov_pred = _regularized_covariance(pred_val_flat, self.covariance_reg)
-
         if self.distance_metric == "kl":
-            return _gaussian_kl(mean_true, cov_true, mean_pred, cov_pred)
-        return _gaussian_wasserstein(mean_true, cov_true, mean_pred, cov_pred)
+            return _marginal_histogram_kl(true_val_flat, pred_val_flat, self.n_bins)
+        return _marginal_cdf_wasserstein(true_val_flat, pred_val_flat)
 
 
 def compute_delay_embedding_distribution_metric(
@@ -782,6 +737,110 @@ def compute_lyaps(Js, dt=1, k=None, verbose=False):
     return torch.flip(
         torch.sort((lexp / lexp_counts) * (1 / dt), axis=-1)[0], dims=[-1]
     )
+
+
+def kaplan_yorke_dimension(spectrum):
+    """
+    Kaplan-Yorke (Lyapunov) dimension of an ordered Lyapunov spectrum.
+
+    The Kaplan-Yorke dimension is
+
+        D_KY = j + (sum_{i=1}^{j} lambda_i) / |lambda_{j+1}|
+
+    where ``j`` is the largest index for which the running sum of the
+    (descending) exponents is still non-negative. It is a standard scalar
+    summary of attractor geometry derived from the full spectrum and is only
+    well defined when the leading partial sum is non-negative and a more
+    negative exponent exists below the crossover.
+
+    Parameters
+    ----------
+    spectrum : array-like
+        Lyapunov exponents in descending order (1D).
+
+    Returns
+    -------
+    float
+        The Kaplan-Yorke dimension, or ``nan`` when it is undefined.
+    """
+    spectrum = np.sort(np.asarray(spectrum, dtype=float))[::-1]
+    cumulative = np.cumsum(spectrum)
+    # Largest j with non-negative running sum (1-indexed count of exponents).
+    nonneg = np.flatnonzero(cumulative >= 0)
+    if nonneg.size == 0:
+        return float("nan")
+    j = int(nonneg[-1]) + 1
+    if j >= spectrum.size:
+        # Whole spectrum sums to >= 0: dimension is the full state dimension.
+        return float(spectrum.size)
+    denom = abs(spectrum[j])
+    if denom < 1e-12:
+        return float("nan")
+    return float(j + cumulative[j - 1] / denom)
+
+
+def compute_lyapunov_spectrum(
+    Js, dt=1, k=None, verbose=False, return_summary=False
+):
+    """
+    Full Lyapunov spectrum from a sequence of discrete Jacobian matrices.
+
+    This is a thin, documented wrapper around :func:`compute_lyaps` that makes
+    the *whole* Lyapunov spectrum a first-class output rather than just the
+    maximal exponent. The spectrum fully characterizes local stability:
+
+    * the maximal exponent (``lambda_1``) diagnoses sensitivity to initial
+      conditions --- the system is chaotic when it is positive;
+    * the *sum* of all exponents is the mean rate of phase-space volume
+      contraction --- a chaotic set can still be an *attracting* set when this
+      sum is negative.
+
+    Parameters
+    ----------
+    Js : torch.Tensor
+        Sequence of discrete Jacobian matrices of shape
+        ``(n_trajectories, time_steps, n_dims, n_dims)`` or
+        ``(time_steps, n_dims, n_dims)``.
+    dt : float, optional
+        Time step size, by default 1.
+    k : int, optional
+        Number of exponents to compute, by default None (the full spectrum).
+    verbose : bool, optional
+        Whether to show progress information, by default False.
+    return_summary : bool, optional
+        If True, also return a dict of scalar summary statistics computed from
+        the (trajectory-averaged) spectrum.
+
+    Returns
+    -------
+    spectrum : torch.Tensor
+        Lyapunov exponents in descending order. Shape ``(..., k)`` matching the
+        leading (trajectory) dimensions of ``Js``.
+    summary : dict, optional
+        Returned only when ``return_summary`` is True. Keys:
+
+        * ``"max"`` -- maximal Lyapunov exponent ``lambda_1``;
+        * ``"sum"`` -- sum of all exponents (volume contraction rate);
+        * ``"kaplan_yorke_dim"`` -- Kaplan-Yorke dimension of the attractor.
+
+        Summary statistics are computed on the spectrum averaged over any
+        leading trajectory dimensions.
+    """
+    spectrum = compute_lyaps(Js, dt=dt, k=k, verbose=verbose)
+    if not return_summary:
+        return spectrum
+
+    # Average over any leading (trajectory) dimensions for the scalar summary.
+    mean_spectrum = spectrum
+    while mean_spectrum.ndim > 1:
+        mean_spectrum = mean_spectrum.mean(0)
+    mean_np = mean_spectrum.detach().cpu().numpy()
+    summary = {
+        "max": float(mean_np[0]),
+        "sum": float(mean_np.sum()),
+        "kaplan_yorke_dim": kaplan_yorke_dimension(mean_np),
+    }
+    return spectrum, summary
 
 
 def compute_input_lyaps(
@@ -1350,7 +1409,10 @@ def compute_nl_cycle_consistency(
 
     best_state = None
     best_val = float("inf")
+    best_epoch = -1
     no_improve = 0
+    train_losses: list[float] = []
+    val_losses: list[float] = []
 
     for epoch in range(max_epochs):
         print(f"\rEpoch {epoch+1}/{max_epochs}...", end="", flush=True)
@@ -1366,8 +1428,12 @@ def compute_nl_cycle_consistency(
             val_pred = enc(Xva)
             val_loss = crit(val_pred, Yva).item()
 
+        train_losses.append(float(loss.detach().cpu().item()))
+        val_losses.append(float(val_loss))
+
         if val_loss + min_delta < best_val:
             best_val = val_loss
+            best_epoch = epoch
             best_state = {
                 k: v.detach().cpu().clone() for k, v in enc.state_dict().items()
             }
@@ -1420,4 +1486,7 @@ def compute_nl_cycle_consistency(
             "Z_mean": Z_m,
             "Z_std": Z_s,
         },
+        "train_losses": train_losses,
+        "val_losses": val_losses,
+        "best_epoch": best_epoch,
     }

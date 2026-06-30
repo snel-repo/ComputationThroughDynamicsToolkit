@@ -1,6 +1,7 @@
 import pytorch_lightning as pl
 import torch
 from torch import nn
+from torch.nn.utils import parametrize
 
 from ctd.data_modeling.datamodules.LFADS.tuples import SessionBatch, SessionOutput
 from ctd.data_modeling.extensions.LFADS.metrics import ExpSmoothedMetric, r2_score
@@ -10,6 +11,7 @@ from .modules.decoder import Decoder
 from .modules.encoder import Encoder
 from .modules.l2 import compute_l2_penalty
 from .modules.priors import Null
+from .modules.recons import Poisson
 
 
 class LFADS(pl.LightningModule):
@@ -64,6 +66,8 @@ class LFADS(pl.LightningModule):
         kl_increase_epoch: int,
         kl_ic_scale: float,
         kl_co_scale: float,
+        rate_bias_init: bool = False,
+        rate_weight_init_scale: float = 1.0,
     ):
         super().__init__()
         self.save_hyperparameters(
@@ -181,6 +185,78 @@ class LFADS(pl.LightningModule):
             }
         else:
             return optimizer
+
+    def on_fit_start(self):
+        """Cold-start the Poisson rate readout for low firing-rate data.
+
+        With a Poisson observation model the rates are produced as
+        ``exp(readout(factors))``, so a zero bias makes the model predict
+        ~1 spike/bin for every neuron at initialization. For low firing-rate
+        data (e.g. PhaseCodedMemory) that starts training far from the correct
+        domain and destabilizes it. We therefore (1) set the per-neuron bias
+        to ``log(mean spikes/bin)`` so each neuron starts at its marginal mean
+        rate, and (2) optionally shrink the readout weight matrix by
+        ``rate_weight_init_scale`` so that the log-rate at initialization has
+        small variance around the mean (avoiding exp() of large pre-activations
+        when the marginal rate itself is tiny).
+
+        This also supports readouts that wrap an ``nn.Linear`` under ``.linear``
+        and constrain the weight to the Stiefel manifold (``StiefelLinear``).
+        For those the bias still lives on the inner linear and is set to the
+        log-mean rate, which places initial firing rates near the observed
+        dataset means. The orthonormality-constrained weight is left untouched:
+        scaling it is both meaningless (projection back to the manifold restores
+        unit-norm columns) and ineffective (the materialized ``weight`` is
+        recomputed from the parametrization base on every forward), and its
+        orthonormal columns already give a small-variance log-rate at init.
+
+        Only runs at the start of fresh training (not when resuming from a
+        checkpoint) and only for the Poisson `exp` link, so existing saved
+        models loaded for inference or continued training are unaffected.
+        """
+        # Allow opting out via config; defaults to on
+        if not getattr(self.hparams, "rate_bias_init", True):
+            return
+        # Only the Poisson exp-link has log-mean as the right bias target
+        if not isinstance(self.recon, Poisson):
+            return
+        # Don't clobber a learned bias when resuming training
+        if self.global_step > 0:
+            return
+        # Resolve the bias-bearing linear. StiefelLinear (and similar wrappers)
+        # nest the trainable nn.Linear under `.linear`; FanInLinear / nn.Linear
+        # expose the bias directly. Fall back to the readout itself.
+        linear = getattr(self.readout, "linear", self.readout)
+        # Readout must expose a per-neuron bias (e.g. FanInLinear / nn.Linear)
+        bias = getattr(linear, "bias", None)
+        if bias is None:
+            return
+
+        datamodule = self.trainer.datamodule
+        if datamodule is None or not hasattr(datamodule, "train_data"):
+            return
+        # train_data is (SessionBatch, extra_tensors); recon_data is (trials, time, neurons)
+        recon_data = datamodule.train_data[0].recon_data
+        if recon_data.shape[-1] != bias.numel():
+            return
+
+        mean_counts = recon_data.reshape(-1, recon_data.shape[-1]).float().mean(dim=0)
+        log_rates = torch.log(mean_counts.clamp_min(1e-4))
+        bias.data.copy_(log_rates.to(bias.device, bias.dtype))
+
+        # Shrink the readout weight matrix so initial log-rate predictions sit
+        # close to the per-neuron log-mean bias (variance ~ scale^2 * fan_in *
+        # weight_std^2). With FanInLinear's default std = 1/sqrt(in_features),
+        # the resulting log-rate std at init is approximately `scale`. Skip this
+        # for manifold-parametrized (Stiefel/orthonormal) weights: the scale
+        # cannot survive the parametrization, and orthonormal columns already
+        # bound the init log-rate variance, so the bias init alone suffices.
+        scale = float(getattr(self.hparams, "rate_weight_init_scale", 1.0))
+        weight = getattr(linear, "weight", None)
+        weight_constrained = parametrize.is_parametrized(linear, "weight")
+        if scale != 1.0 and weight is not None and not weight_constrained:
+            with torch.no_grad():
+                weight.data.mul_(scale)
 
     def _compute_ramp(self, start, increase):
         # Compute a coefficient that ramps from 0 to 1 over `increase` epochs

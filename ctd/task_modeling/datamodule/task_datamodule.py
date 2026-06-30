@@ -61,7 +61,9 @@ class TaskDataModule(pl.LightningDataModule):
 
         """
         super().__init__()
-        self.save_hyperparameters()
+        # data_env is an nn.Module (the task environment); checkpointing already
+        # captures it, so PL warns when it appears in hparams. Tell it to skip.
+        self.save_hyperparameters(ignore=["data_env"])
         # Set the random seed
         np.random.seed(seed)
         torch.manual_seed(seed)

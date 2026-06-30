@@ -76,6 +76,11 @@ dropout_rate: 0.02 # sampled
 cell_clip: 5.0
 loss_scale: 1.0e+4
 recon_reduce_mean: True
+# Init Poisson rate readout bias to per-neuron log mean rate (low-FR cold start)
+rate_bias_init: True
+# Shrink readout weights at init so log-rate predictions sit close to the
+# log-mean bias (avoids exploding exp() of large pre-activations for low-FR data)
+rate_weight_init_scale: 0.1
 
 # --------- learning rate --------- #
 lr_init: 5.0e-3
