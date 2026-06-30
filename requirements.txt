@@ -18,6 +18,7 @@ ipykernel
 ipywidgets
 opencv-python
 jax[cpu]
+geotorch
 dsa-metric @ git+https://github.com/mitchellostrow/DSA.git@main
 #torchvision==0.14
 #torchdata==0.5.1
