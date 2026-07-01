@@ -9,15 +9,42 @@ This git repo contains code that will allow users to:
 ## Installation
 We recommend using Conda to run this code. Ray support for Windows is spotty, so Linux or Windows Subsystem for Linux is recommended.
 
-Create a Python 3.10 environment, clone the repository, and install the toolkit in editable mode:
+### Step 0: Install Git LFS *before* cloning
+The pretrained models used by the walkthrough tutorial (`examples/walkthrough_models/`) are stored with [Git LFS](https://git-lfs.com). **Install and initialize Git LFS before you clone**, otherwise those files download as small text pointers instead of the real models and the notebook will fail to load them.
 
+Install the Git LFS client (once per machine):
+- Conda: `conda install -c conda-forge git-lfs`
+- Debian/Ubuntu: `sudo apt-get install git-lfs`
+- macOS (Homebrew): `brew install git-lfs`
+- Other platforms: https://git-lfs.com
+
+Then enable it for your user account (once):
 ```
+git lfs install
+```
+
+### Step 1: Clone, create the environment, and install
+```
+# Clone (with Git LFS already initialized, the models download automatically)
 git clone https://github.com/snel-repo/ComputationThroughDynamicsToolkit.git
 cd ComputationThroughDynamicsToolkit
+
+# If you installed Git LFS AFTER cloning, fetch the models now:
+git lfs pull
+
 conda create --name CtDEnv python=3.10
 conda activate CtDEnv
 python -m pip install --upgrade pip
 pip install -e .
+```
+
+Verify the models came down as real files rather than pointers (should be tens of KB or larger, not ~130 bytes):
+```
+du -h examples/walkthrough_models/tt_3bff/model.pkl
+```
+To fetch only the tutorial models (and skip the larger `pretrained/` set), use:
+```
+git lfs pull --include="examples/walkthrough_models/**"
 ```
 
 The toolkit imports Dynamical Similarity Analysis as `DSA`. The pip-installable dependency is `dsa-metric`, installed from the upstream DSA GitHub repository by `pip install -e .`. Do not install the unrelated PyPI package named `dsa`. If pip reports `No matching distribution found for dsa`, make sure `requirements.txt` contains `dsa-metric @ git+https://github.com/mitchellostrow/DSA.git@main`, then retry the editable install.
