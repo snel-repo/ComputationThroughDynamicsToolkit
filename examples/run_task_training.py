@@ -2,10 +2,10 @@ import os
 
 import ray
 
-LOCAL_MODE = False  # Set to True to run locally for debugging
-if LOCAL_MODE:
-    ray.init(local_mode=True, num_gpus=0)  # Ensure no GPUs are requested
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+# LOCAL_MODE = True  # Set to True to run locally for debugging
+# if LOCAL_MODE:
+#     ray.init(local_mode=True, num_gpus=0)  # Ensure no GPUs are requested
+#     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import shutil
 from pathlib import Path
@@ -27,7 +27,7 @@ OVERWRITE = True  # Set to True to overwrite existing run
 
 RUN_DESC = "NBFF_test"  # Description of the run
 TASK = "NBFF"  # Task to train on (see configs/task_env for options)
-MODEL = "NoisyGRULatentR2"  # Model to train (see configs/model for options)
+MODEL = "NoisyGRULatentL2"  # Model to train (see configs/model for options)
 
 # ----------------- Parameter Selection -----------------------------------
 SEARCH_SPACE = {
@@ -69,7 +69,7 @@ def main(
         metric="loss",
         mode="min",
         config=SEARCH_SPACE,
-        resources_per_trial=dict(cpu=4, gpu=0.45),
+        resources_per_trial=dict(cpu=4, gpu=0),
         num_samples=1,
         storage_path=str(RUN_DIR),
         search_alg=BasicVariantGenerator(),

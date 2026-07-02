@@ -81,6 +81,7 @@ class Analysis_TT_MultiTask(Analysis_TT):
         max_iters=50000,
         n_inits=2048,
         use_noisy=True,
+        compute_jacobians=True,
     ):
         # Compute latent activity from task trained model
         task_flag, phase_task = self.get_task_flag(task_to_analyze, phase="val")
@@ -128,6 +129,7 @@ class Analysis_TT_MultiTask(Analysis_TT):
             max_iters=max_iters,
             device="cpu",
             seed=0,
+            compute_jacobians=compute_jacobians,
         )
 
         return fps

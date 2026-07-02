@@ -4,6 +4,10 @@ import pickle
 from pathlib import Path
 from typing import List
 
+import matplotlib
+
+matplotlib.use("Agg")
+
 import dotenv
 import hydra
 import pytorch_lightning as pl
