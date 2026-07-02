@@ -25,15 +25,15 @@ dotenv.load_dotenv(override=True)
 # ---------------Options---------------
 OVERWRITE = True  # Set to True to overwrite existing run
 
-RUN_DESC = "ChaoticDelayedMatching_Final2"  # Description of the run
-TASK = "ChaoticDelayedMatching"  # Task to train on (see configs/task_env for options)
-MODEL = "ChaoticRate_RNN"  # Model to train (see configs/model for options)
+RUN_DESC = "NBFF_test"  # Description of the run
+TASK = "NBFF"  # Task to train on (see configs/task_env for options)
+MODEL = "NoisyGRULatentR2"  # Model to train (see configs/model for options)
 
 # ----------------- Parameter Selection -----------------------------------
 SEARCH_SPACE = {
     "trainer.max_epochs": tune.choice([100]),
     # "trainer.gradient_clip_val": tune.choice([0.5]),
-    "model.recurrent_gain": tune.grid_search([2.2]),
+    # "model.recurrent_gain": tune.grid_search([2.2]),
     # "model.input_trainable": tune.choice([True]),
     "datamodule_task.batch_size": tune.grid_search([256]),
     # 'task_wrapper.weight_decay': tune.choice([1e-5]),
