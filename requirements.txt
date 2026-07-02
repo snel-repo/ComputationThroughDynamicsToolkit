@@ -11,6 +11,8 @@ numpy>=1.24.0
 scipy
 scikit-learn
 matplotlib
+plotly
+nbformat>=4.2.0
 python-dotenv
 imageio[ffmpeg]
 motornet==0.2.0
