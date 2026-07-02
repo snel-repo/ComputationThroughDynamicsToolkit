@@ -69,6 +69,8 @@ def main(
         metric="loss",
         mode="min",
         config=SEARCH_SPACE,
+        # gpu=0 by default so this runs on CPU-only machines; raise it (e.g. 0.45)
+        # to use a fraction of a GPU per trial if one is available.
         resources_per_trial=dict(cpu=4, gpu=0),
         num_samples=1,
         storage_path=str(RUN_DIR),

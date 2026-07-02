@@ -83,6 +83,14 @@ The two primary run scripts are "run_task_training.py" and "run_data_training.py
 
 Each uses ray, hydra, and PyTorch Lightning to handle hyperparameter sweeps and logging. WandB is used by default, but TensorBoard logging is also available.
 
+### WandB logging
+Both scripts log to [Weights & Biases](https://wandb.ai) by default (`run_task_training.py` logs to a project called `task_trained_RNN`, `run_data_training.py` to `data-trained`; no entity/team is set, so runs land in your default WandB entity).
+
+- Before your first run, authenticate once with `wandb login` (or set the `WANDB_API_KEY` environment variable) using a free account from https://wandb.ai.
+- To disable WandB in `run_data_training.py`, set `WANDB_LOGGING = False` near the top of the script — it falls back to TensorBoard + CSV logging only.
+- `run_task_training.py` has no such flag; it always loads `configs/logger/default.yaml` (task_modeling). To run without WandB, edit `loggers=cfg_root / "logger" / "default.yaml"` in `utils.py`'s `generate_paths` to point at `configs/logger/default_no_wandb.yaml` instead.
+- TensorBoard and CSV logs are always written regardless of the WandB setting, so `tensorboard --logdir <RUN_DIR>` works even if you skip WandB entirely.
+
 There are six tasks implemented, ranging from simple to complex:
 1. NBFF: An extension of the 3-bit Flip-Flop from OTBB, this can be extended into higher dimensions for more complex dynamics.
 2. MultiTask: A version of the task used in recent papers by Yang and Driscoll, this task combines 15 simple cognitive tasks into a single task to look at how dynamical motifs can generalize.
@@ -98,6 +106,8 @@ To get an overview of the major components of the code-base, only three scripts 
 3. examples/compare_tt_dd_models.py
 
 Before running these scripts, you will need to modify the HOME_DIR variable in your .env file to a location where you'd like to save the outputs of the runs (datasets, logging info, trained models).
+
+No GPU? `run_task_training.py` defaults to `resources_per_trial=dict(cpu=4, gpu=0)`, so it trains entirely on CPU out of the box. `run_data_training.py` defaults to `gpu=0.45` (requesting a fraction of a GPU); if you don't have one, change that to `gpu=0` before running it, otherwise Ray Tune will hang waiting for a GPU that never appears.
 
 run_task_training trains a simple GRU to perform a 3-Bit Flip-Flop task. The default parameters can be seen in the task_modeling/configs/ folder. Once run_task_training.py is finished training, it will save a simulated spiking dataset in HOME_DIR/content/dataset/dd/. To train a data-trained model on those simulated data, you just need to modify "prefix" in run_data_training.py to whatever folder name is saved, typically in the form "yyyyMMdd_RUN_DESC..." Only the yyyyMMdd_RUN_DESC should be included in the prefix.
 

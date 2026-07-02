@@ -132,6 +132,8 @@ def main(
             train, run_tag=run_tag_in, config_dict=config_dict, path_dict=path_dict
         ),
         config=SEARCH_SPACE,
+        # Requests a GPU fraction by default; if you don't have a GPU, change
+        # this to gpu=0 (Ray will otherwise wait forever for a GPU that never appears).
         resources_per_trial=dict(cpu=4, gpu=0.45),
         num_samples=NUM_SAMPLES,
         storage_path=run_dir,
