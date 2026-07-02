@@ -46,7 +46,25 @@ MANIFEST
 data/runs/*
 content/*
 old/*
-examples/dev/*
+
+# Manuscript source/output for local resubmission work
+manuscript/
+
+# Local development / process notes
+examples/demo_delay_embed_distribution_metric.py
+dev/
+examples/dev/
+*_reviewer_TODOs
+manuscript/reviewer_response_audit.md
+
+# Figure-generation working artifacts
+examples/figures/**/old/
+examples/figures/**/outputs/
+examples/figures/**/lat_size_plots/
+examples/figures/**/exploratory/
+examples/figures/Fig6InputInf/dp/
+manuscript/diff.tex
+examples/figures/websiteVids/
 
 !/examples/png/*.png
 !/pretrained/**/*.pkl
@@ -62,6 +80,9 @@ examples/dev/*
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
+
+# Local experimental tests
+tests/test_delay_embed_distribution_metric.py
 
 # Unit test / coverage reports
 htmlcov/
