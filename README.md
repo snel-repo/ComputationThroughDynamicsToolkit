@@ -10,7 +10,7 @@ This git repo contains code that will allow users to:
 We recommend using Conda to run this code. Ray support for Windows is spotty, so Linux or Windows Subsystem for Linux is recommended.
 
 ### Step 0: Install Git LFS *before* cloning
-The pretrained models used by the walkthrough tutorial (`examples/walkthrough_models/`) are stored with [Git LFS](https://git-lfs.com). **Install and initialize Git LFS before you clone**, otherwise those files download as small text pointers instead of the real models and the notebook will fail to load them.
+The pretrained models used by the walkthrough tutorial (`examples/CtDToolkit_Walkthrough_Colab.ipynb`) are stored with [Git LFS](https://git-lfs.com). **Install and initialize Git LFS before you clone**, otherwise those files download as small text pointers instead of the real models and the notebook will fail to load them.
 
 Install the Git LFS client (once per machine):
 - Conda: `conda install -c conda-forge git-lfs`
@@ -42,9 +42,17 @@ Verify the models came down as real files rather than pointers (should be tens o
 ```
 du -h examples/walkthrough_models/tt_3bff/model.pkl
 ```
-To fetch only the tutorial models (and skip the larger `pretrained/` set), use:
-```
+A full `git lfs pull` fetches everything (`examples/walkthrough_models/` is 5.56 GB, `pretrained/` is 1.51 GB). To fetch only what you need:
+
+```bash
+# Walkthrough tutorial, Sections 1-10 (5.56 GB)
 git lfs pull --include="examples/walkthrough_models/**"
+
+# Optional: Section 11 (MultiTask) (1.24 GB)
+git lfs pull --include="pretrained/20241113_MultiTask_NoisyGRU_Final2/**"
+
+# Canonical dataset generation via examples/gen_datasets.py (1.51 GB, includes the above)
+git lfs pull --include="pretrained/**"
 ```
 
 The toolkit imports Dynamical Similarity Analysis as `DSA`. The pip-installable dependency is `dsa-metric`, installed from the upstream DSA GitHub repository by `pip install -e .`. Do not install the unrelated PyPI package named `dsa`. If pip reports `No matching distribution found for dsa`, make sure `requirements.txt` contains `dsa-metric @ git+https://github.com/mitchellostrow/DSA.git@main`, then retry the editable install.
@@ -100,10 +108,10 @@ There are six tasks implemented, ranging from simple to complex:
 6. ChaoticDelayedMatching: A delayed non-match-to-sample benchmark with a simple chaotic or near-chaotic rate-RNN teacher and exported latent / rate / spike datasets.
 
 ## Quick-Start:
-To get an overview of the major components of the code-base, only three scripts are necessary:
+To get an overview of the major components of the code-base, only three files are necessary:
 1. examples/run_task_training.py
 2. examples/run_data_training.py
-3. examples/compare_tt_dd_models.py
+3. examples/compare_dd_tt_models.ipynb
 
 Before running these scripts, you will need to modify the HOME_DIR variable in your .env file to a location where you'd like to save the outputs of the runs (datasets, logging info, trained models).
 
@@ -115,7 +123,7 @@ If there is more than one simulated dataset (i.e., if you did a hyperparameter s
 
 Once run_data_training.py is complete, it will save a trained model and the datamodule as .pkl files. These pickle files can be loaded into analysis objects that have automated functions to compare models, perform fixed-point analyses, etc.
 
-After both task-trained and data-trained models have been run, modify the dd_path and tt_path in compare_tt_dd_models.py to plot some basic comparisons and fixed-point analyses on the trained models!
+After both task-trained and data-trained models have been run, modify `tt_path` and `MODEL_SWEEP_PATH` in `examples/compare_dd_tt_models.ipynb` to plot some basic comparisons and fixed-point analyses on the trained models!
 
 ## Overview of major components of CtDToolkit:
 ### Task-Training:

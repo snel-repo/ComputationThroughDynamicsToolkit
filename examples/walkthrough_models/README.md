@@ -1,8 +1,8 @@
 # Walkthrough models (git LFS)
 
-Pretrained model files used by [`../CtDToolkit_Walkthrough.ipynb`](../CtDToolkit_Walkthrough.ipynb).
+Pretrained model files used by [`../CtDToolkit_Walkthrough_Colab.ipynb`](../CtDToolkit_Walkthrough_Colab.ipynb).
 They are a **minimal curated slice** of the full `tt_3bff` results (the complete tree is ~148 GB);
-only what the tutorial loads is kept here (~4.8 GB). All `.pkl` files are stored with **git LFS**.
+only what the tutorial loads is kept here (5.56 GB). All `.pkl` files are stored with **git LFS**.
 
 ## Getting the files
 
@@ -35,7 +35,8 @@ walkthrough_models/
 
 The sub-folder names are parsed by the notebook (`latent_size=` and `kl_co_scale=`), so do not
 rename them. Each model folder is self-contained: its `datamodule.pkl` carries the simulated
-spikes, so no files outside this directory are required.
+spikes, so no files outside this directory are required for Sections 1-10. Section 11
+additionally loads `pretrained/20241113_MultiTask_NoisyGRU_Final2/`.
 
 ## Provenance
 
