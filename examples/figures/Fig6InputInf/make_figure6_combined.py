@@ -24,20 +24,20 @@ for path in (REPO_ROOT, REPO_ROOT / "libs" / "DSA", REPO_ROOT / "libs" / "lfads-
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-import dotenv
-import matplotlib.gridspec as gridspec
-import matplotlib.pyplot as plt
-import numpy as np
-import torch
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
-from sklearn.decomposition import PCA
-from sklearn.linear_model import LinearRegression
+import dotenv  # noqa: E402
+import matplotlib.gridspec as gridspec  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
+from mpl_toolkits.mplot3d import Axes3D  # noqa: E402,F401
+from sklearn.decomposition import PCA  # noqa: E402
+from sklearn.linear_model import LinearRegression  # noqa: E402
 
 plt.rcParams["font.family"] = ["Arial", "DejaVu Sans"]
 
-from ctd.comparison.analysis.dd.dd import Analysis_DD
-from ctd.comparison.analysis.tt.tt import Analysis_TT
-from ctd.comparison.comparison import Comparison
+from ctd.comparison.analysis.dd.dd import Analysis_DD  # noqa: E402
+from ctd.comparison.analysis.tt.tt import Analysis_TT  # noqa: E402
+from ctd.comparison.comparison import Comparison  # noqa: E402
 
 dotenv.load_dotenv(dotenv.find_dotenv())
 
@@ -79,7 +79,7 @@ def parse_args(argv=None) -> argparse.Namespace:
         "--metrics-cache",
         type=Path,
         default=Path(__file__).parent / "make_figure6_combined.metrics.pkl",
-        help="Cache for the comparison-derived data (metrics, traces, model selection).",
+        help=("Cache for comparison-derived data (metrics, traces, model selection)."),
     )
     parser.add_argument(
         "--fps-cache",
@@ -110,13 +110,13 @@ def parse_args(argv=None) -> argparse.Namespace:
         "--best-model-ind",
         type=int,
         default=BEST_MODEL_IND,
-        help="Index into comparison.analyses (full list, after regroup) for the 'good' model.",
+        help=("Full comparison.analyses index, after regroup, for the 'good' model."),
     )
     parser.add_argument(
         "--bad-model-ind",
         type=int,
         default=BAD_MODEL_IND,
-        help="Index into comparison.analyses (full list, after regroup) for the 'bad' model.",
+        help=("Full comparison.analyses index, after regroup, for the 'bad' model."),
     )
     parser.add_argument(
         "--fps-seed",
@@ -200,7 +200,10 @@ def ineffective_inputs(inputs: np.ndarray) -> np.ndarray:
 
 # %%
 def load_comparison():
-    """Construct the TT + LFADS-sweep comparison. Not cached (holds live torch models)."""
+    """Construct the TT + LFADS-sweep comparison.
+
+    This object is not cached because it holds live torch models.
+    """
     HOME_DIR = os.environ["HOME_DIR"]
     path_TT = HOME_DIR + "content/trained_models/task-trained/tt_3bff/"
     path_LFADS = path_TT + "20241004_NBFF_InputInf_Replication/"
@@ -255,15 +258,18 @@ def build_metrics_payload(force: bool, cache_path: Path):
         "kl_co_scales",
         "seed",
     }
+    required_metric_keys = {"input_r2", "input_r2_true_to_inferred"}
     if cache_path.exists() and not force:
         with cache_path.open("rb") as f:
             payload = pickle.load(f)
         missing = required_keys - set(payload)
-        if not missing:
+        missing_metric_keys = required_metric_keys - set(payload.get("metrics", {}))
+        if not missing and not missing_metric_keys:
             print(f"Loaded metrics cache from {cache_path}")
             return payload, None
         print(
-            f"Metrics cache at {cache_path} is missing keys {sorted(missing)} "
+            f"Metrics cache at {cache_path} is missing payload keys "
+            f"{sorted(missing)} or metric keys {sorted(missing_metric_keys)} "
             "(probably written by an older script version) — rebuilding."
         )
 
@@ -274,6 +280,7 @@ def build_metrics_payload(force: bool, cache_path: Path):
         "rate_r2": {},
         "state_r2": {},
         "input_r2": {},
+        "input_r2_true_to_inferred": {},
         "cycle_con": {"variance_threshold": 0.01},
         "co-bps": {},
     }
@@ -346,25 +353,35 @@ def _print_model_table(payload: dict) -> None:
     dd_metric_by_run = {
         rn: {
             "input_r2": float(metrics["input_r2"][i]),
+            "input_r2_true_to_inferred": float(metrics["input_r2_true_to_inferred"][i]),
             "co-bps": float(metrics["co-bps"][i]),
             "cycle_con": float(metrics["cycle_con"][i]),
             "rate_r2": float(metrics["rate_r2"][i]),
         }
         for i, rn in enumerate(run_names)
     }
-    header = f"{'idx':>3}  {'type':<14}  {'run_name':<42}  {'input_r2':>9}  {'co-bps':>8}  {'cycle':>7}"
+    header = (
+        f"{'idx':>3}  {'type':<14}  {'run_name':<42}  "
+        f"{'input_i2t':>9}  {'legacy_t2i':>10}  {'delta':>8}  "
+        f"{'co-bps':>8}  {'cycle':>7}"
+    )
     print(header)
     print("-" * len(header))
     for entry in payload["full_analyses_info"]:
         m = dd_metric_by_run.get(entry["run_name"])
         if m is None:
-            metric_str = f"{'-':>9}  {'-':>8}  {'-':>7}"
+            metric_str = f"{'-':>9}  {'-':>10}  {'-':>8}  {'-':>8}  {'-':>7}"
         else:
+            delta = m["input_r2"] - m["input_r2_true_to_inferred"]
             metric_str = (
-                f"{m['input_r2']:>9.3f}  {m['co-bps']:>8.3f}  {m['cycle_con']:>7.3f}"
+                f"{m['input_r2']:>9.3f}  "
+                f"{m['input_r2_true_to_inferred']:>10.3f}  "
+                f"{delta:>+8.3f}  {m['co-bps']:>8.3f}  "
+                f"{m['cycle_con']:>7.3f}"
             )
         print(
-            f"{entry['index']:>3}  {entry['type']:<14}  {entry['run_name']:<42}  {metric_str}"
+            f"{entry['index']:>3}  {entry['type']:<14}  "
+            f"{entry['run_name']:<42}  {metric_str}"
         )
 
 
@@ -436,7 +453,8 @@ def build_fps_payload(
         with cache_path.open("rb") as f:
             fp_cache_by_run = pickle.load(f)
         print(
-            f"Loaded FPs cache from {cache_path} (contains {len(fp_cache_by_run)} model(s))"
+            f"Loaded FPs cache from {cache_path} "
+            f"(contains {len(fp_cache_by_run)} model(s))"
         )
 
     missing = [
@@ -634,7 +652,8 @@ def make_figure(payload: dict, trial_num: int, output_dir: Path) -> Path:
         spine.set_edgecolor("0.6")
     ax_A.set_title("A", loc="left", fontweight="bold", fontsize=14)
 
-    # Panel B — 5 stacked traces in bottom 4/5 (state, true, effective, good-inf, bad-inf)
+    # Panel B — 5 stacked traces in bottom 4/5
+    # (state, true, effective, good-inf, bad-inf)
     inner_B = gridspec.GridSpecFromSubplotSpec(
         nrows=5, ncols=1, subplot_spec=col0[1:5, 0], hspace=0.4
     )

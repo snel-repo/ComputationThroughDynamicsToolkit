@@ -9,13 +9,13 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 
 from ctd.comparison.metrics import (
+    compute_affine_mapping_r2,
+    compute_aligned_signal_r2,
     compute_delay_embedding_distribution_metric,
     compute_nl_cycle_consistency,
     compute_static_rotation_invariant_mmd,
     get_bps,
     get_cycle_consistency,
-    get_signal_r2,
-    get_signal_r2_linear,
 )
 
 
@@ -77,7 +77,7 @@ class Comparison:
                 true_inputs_list_train.append(true_inputs_train[i, :t_len, :])
             for i, v_len in enumerate(trial_lens_val):
                 true_lats_list_val.append(true_lats_val[i, :v_len, :])
-                true_inputs_list_val.append(true_inputs_val[i, v_len, :])
+                true_inputs_list_val.append(true_inputs_val[i, :v_len, :])
 
             true_lats_train = torch.concatenate(true_lats_list_train)
             true_lats_val = torch.concatenate(true_lats_list_val)
@@ -176,56 +176,70 @@ class Comparison:
             metrics_dict["run_name"].append(self.analyses[i].run_name)
             metrics_dict["group"].append(self.groups[i])
 
+            input_metric_names = {"input_r2", "input_r2_true_to_inferred"}
+            if input_metric_names.intersection(metric_dict_list):
+                inf_inputs_train = trim_trials(
+                    self.analyses[i].get_inferred_inputs(phase="train"),
+                    trial_lens_train,
+                )
+                inf_inputs_val = trim_trials(
+                    self.analyses[i].get_inferred_inputs(phase="val"),
+                    trial_lens_val,
+                )
+            else:
+                inf_inputs_train = None
+                inf_inputs_val = None
+
             for j, metric in enumerate(metric_dict_list):
                 t_metric = time.perf_counter()
                 if metric == "rate_r2":
-                    rate_r2 = get_signal_r2(
-                        signal_true=true_rates_val,
-                        signal_pred=inf_rates_val,
+                    rate_r2 = compute_aligned_signal_r2(
+                        reference_signal=true_rates_val,
+                        comparison_signal=inf_rates_val,
                     )
                     print(f"    Rate R2: {rate_r2}", flush=True)
                     metrics_dict["rate_r2"].append(rate_r2)
 
                 elif metric == "recon_r2":
-                    recon_r2 = get_signal_r2_linear(
-                        signal_true_train=true_lats_train,
-                        signal_pred_train=inf_latents_train,
-                        signal_true_val=true_lats_val,
-                        signal_pred_val=inf_latents_val,
+                    recon_r2 = compute_affine_mapping_r2(
+                        source_train=true_lats_train,
+                        target_train=inf_latents_train,
+                        source_val=true_lats_val,
+                        target_val=inf_latents_val,
                     )
                     print(f"    Recon R2: {recon_r2}", flush=True)
                     metrics_dict["recon_r2"].append(recon_r2)
 
                 elif metric == "input_r2":
-                    inf_inputs_train = self.analyses[i].get_inferred_inputs(
-                        phase="train"
+                    input_r2 = compute_affine_mapping_r2(
+                        source_train=inf_inputs_train,
+                        target_train=true_inputs_train,
+                        source_val=inf_inputs_val,
+                        target_val=true_inputs_val,
                     )
-                    inf_inputs_val = self.analyses[i].get_inferred_inputs(phase="val")
-                    if unequal_trial_lens:
-                        inf_inputs_train_list = []
-                        inf_inputs_val_list = []
-                        for i, t_len in enumerate(trial_lens_train):
-                            inf_inputs_train_list.append(inf_inputs_train[i, :t_len, :])
-                        for i, v_len in enumerate(trial_lens_val):
-                            inf_inputs_val_list.append(inf_inputs_val[i, :v_len, :])
-                        inf_inputs_train = torch.concatenate(inf_inputs_train_list)
-                        inf_inputs_val = torch.concatenate(inf_inputs_val_list)
-
-                    input_r2 = get_signal_r2_linear(
-                        signal_true_train=true_inputs_train,
-                        signal_pred_train=inf_inputs_train,
-                        signal_true_val=true_inputs_val,
-                        signal_pred_val=inf_inputs_val,
-                    )
-                    print(f"    Input R2: {input_r2}", flush=True)
+                    print(f"    Input R2 (inferred -> true): {input_r2}", flush=True)
                     metrics_dict["input_r2"].append(input_r2)
 
+                elif metric == "input_r2_true_to_inferred":
+                    reverse_input_r2 = compute_affine_mapping_r2(
+                        source_train=true_inputs_train,
+                        target_train=inf_inputs_train,
+                        source_val=true_inputs_val,
+                        target_val=inf_inputs_val,
+                    )
+                    print(
+                        "    Input R2 diagnostic (true -> inferred): "
+                        f"{reverse_input_r2}",
+                        flush=True,
+                    )
+                    metrics_dict["input_r2_true_to_inferred"].append(reverse_input_r2)
+
                 elif metric in ["state_r2"]:
-                    state_r2 = get_signal_r2_linear(
-                        signal_true_train=true_lats_train,
-                        signal_pred_train=inf_latents_train,
-                        signal_true_val=true_lats_val,
-                        signal_pred_val=inf_latents_val,
+                    state_r2 = compute_affine_mapping_r2(
+                        source_train=true_lats_train,
+                        target_train=inf_latents_train,
+                        source_val=true_lats_val,
+                        target_val=inf_latents_val,
                     )
                     print(f"    State R2: {state_r2}", flush=True)
                     metrics_dict["state_r2"].append(state_r2)
@@ -254,8 +268,8 @@ class Comparison:
                     else:
                         raise ValueError(
                             f"Unsupported input_source '{input_source}' for {metric}. "
-                            "Only 'observations'/'spikes' (observed spikes vs predicted "
-                            "rates) is supported."
+                            "Only 'observations'/'spikes' (observed spikes "
+                            "vs predicted rates) is supported."
                         )
 
                     geometry_score = compute_delay_embedding_distribution_metric(
@@ -293,9 +307,7 @@ class Comparison:
                         inf_rates_val=inf_rates_val.detach().numpy(),
                         variance_threshold=cycle_con_var,
                     )
-                    print(
-                        f"    Cycle Consistency R2: {linear_cycle_con}", flush=True
-                    )
+                    print(f"    Cycle Consistency R2: {linear_cycle_con}", flush=True)
                     metrics_dict["cycle_con"].append(linear_cycle_con)
                 elif metric in ["nl_cycle_con"]:
                     hidden_sizes = metric_dict_list[metric].get(
@@ -799,13 +811,17 @@ class Comparison:
             group_vals = mean_r2[group_inds]
             finite_vals = group_vals[np.isfinite(group_vals)]
             if finite_vals.size == 0:
-                print(f"\nWarning: all performance R2 values for group '{group}' are "
-                      "non-finite; plotting as NaN.")
+                print(
+                    f"\nWarning: all performance R2 values for group '{group}' are "
+                    "non-finite; plotting as NaN."
+                )
                 mean_in_group.append(np.nan)
             else:
                 if finite_vals.size < group_vals.size:
-                    print(f"\nWarning: dropped {group_vals.size - finite_vals.size} "
-                          f"non-finite performance R2 value(s) from group '{group}'.")
+                    print(
+                        f"\nWarning: dropped {group_vals.size - finite_vals.size} "
+                        f"non-finite performance R2 value(s) from group '{group}'."
+                    )
                 mean_in_group.append(np.mean(finite_vals))
 
         mean_in_group = np.asarray(mean_in_group, dtype=float)
@@ -908,6 +924,8 @@ class Comparison:
             # Throw an error
             raise ValueError("No reference index provided")
         reference_analysis = self.analyses[ref_ind]
+        # Columns: Rate R², State R² (true -> inferred), Input R²
+        # (inferred -> true), and the reverse input diagnostic (true -> inferred).
         rate_state_inp_mat = np.zeros((self.num_analyses, 4))
         rate_state_inp_mat[ref_ind, :] = np.nan
         true_lats = reference_analysis.get_latents(phase=phase)
@@ -957,21 +975,27 @@ class Comparison:
                 continue
             inf_inputs = self.analyses[i].get_inferred_inputs(phase=phase)
             # Compute the rate R2 and state R2
-            rate_state_inp_mat[i, 0] = get_signal_r2(
-                signal_true=true_rates,
-                signal_pred=rates,
+            rate_state_inp_mat[i, 0] = compute_aligned_signal_r2(
+                reference_signal=true_rates,
+                comparison_signal=rates,
             )
-            rate_state_inp_mat[i, 1] = get_signal_r2_linear(
-                signal_true=true_lats,
-                signal_pred=latents,
+            rate_state_inp_mat[i, 1] = compute_affine_mapping_r2(
+                source_train=true_lats,
+                target_train=latents,
+                source_val=true_lats,
+                target_val=latents,
             )
-            rate_state_inp_mat[i, 2] = get_signal_r2_linear(
-                signal_true=true_inputs,
-                signal_pred=inf_inputs,
+            rate_state_inp_mat[i, 2] = compute_affine_mapping_r2(
+                source_train=inf_inputs,
+                target_train=true_inputs,
+                source_val=inf_inputs,
+                target_val=true_inputs,
             )
-            rate_state_inp_mat[i, 3] = get_signal_r2_linear(
-                signal_true=inf_inputs,
-                signal_pred=true_inputs,
+            rate_state_inp_mat[i, 3] = compute_affine_mapping_r2(
+                source_train=true_inputs,
+                target_train=inf_inputs,
+                source_val=true_inputs,
+                target_val=inf_inputs,
             )
 
         # Finalize the in-place "Working on …" line.
@@ -1023,12 +1047,14 @@ class Comparison:
             max_val = ax_lim[1]
         ax.set_xlim([min_val, max_val])
         ax.set_ylim([min_val, max_val])
+        ax.set_zlim([min_val, max_val])
         ax.plot([min_val, max_val], [min_val, max_val], "k--")
         # Square axis
         ax.set_aspect("equal", adjustable="box")
         ax.set_xlabel("Rate R2 ")
         ax.set_ylabel("State R2 ")
-        ax.set_title(f"Rate-State R2 ({self.comparison_tag})")
+        ax.set_zlabel("Input R2 (inferred to true)")
+        ax.set_title(f"Rate-State-Input R2 ({self.comparison_tag})")
         if save_pdf:
             plt.savefig(f"{self.comparison_tag}_rate_state_inp_r2.pdf")
         return rate_state_inp_mat

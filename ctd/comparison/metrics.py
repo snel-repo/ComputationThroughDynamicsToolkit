@@ -18,66 +18,122 @@ from tqdm import tqdm
 from ctd.data_modeling.callbacks.metrics import bits_per_spike
 
 
+def _flatten_signal_samples(signal, *, name):
+    """Return a signal as ``(samples, features)`` NumPy data."""
+    if torch.is_tensor(signal):
+        signal = signal.detach().cpu().numpy()
+    else:
+        signal = np.asarray(signal)
+
+    if signal.ndim < 2:
+        raise ValueError(
+            f"{name} must have at least a sample and feature dimension; "
+            f"got shape {signal.shape}."
+        )
+    return signal.reshape(-1, signal.shape[-1])
+
+
+def compute_affine_mapping_r2(*, source_train, target_train, source_val, target_val):
+    """Score an affine mapping from an explicitly named source to a target.
+
+    The affine map is fit as ``source_train -> target_train`` and evaluated by
+    predicting ``target_val`` from ``source_val``. The returned score is the
+    variance-weighted R² across target dimensions.
+
+    Keyword-only arguments make the regression direction visible at every call
+    site. This matters for CtD metrics: State R² maps true states to inferred
+    states to detect invented features, whereas Input R² maps inferred inputs
+    to true inputs to measure recovery of the ground-truth inputs.
+    """
+    source_train_flat = _flatten_signal_samples(source_train, name="source_train")
+    target_train_flat = _flatten_signal_samples(target_train, name="target_train")
+    source_val_flat = _flatten_signal_samples(source_val, name="source_val")
+    target_val_flat = _flatten_signal_samples(target_val, name="target_val")
+
+    if source_train_flat.shape[0] != target_train_flat.shape[0]:
+        raise ValueError(
+            "Training source and target must contain the same number of "
+            f"samples; got {source_train_flat.shape[0]} and "
+            f"{target_train_flat.shape[0]}."
+        )
+    if source_val_flat.shape[0] != target_val_flat.shape[0]:
+        raise ValueError(
+            "Validation source and target must contain the same number of "
+            f"samples; got {source_val_flat.shape[0]} and "
+            f"{target_val_flat.shape[0]}."
+        )
+
+    regression = LinearRegression().fit(source_train_flat, target_train_flat)
+    predicted_target_val = regression.predict(source_val_flat)
+    return r2_score(
+        target_val_flat, predicted_target_val, multioutput="variance_weighted"
+    )
+
+
+def get_linear_mapping_r2(*, source_train, target_train, source_val, target_val):
+    """Deprecated alias for :func:`compute_affine_mapping_r2`."""
+    warnings.warn(
+        "get_linear_mapping_r2 was renamed to compute_affine_mapping_r2.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_affine_mapping_r2(
+        source_train=source_train,
+        target_train=target_train,
+        source_val=source_val,
+        target_val=target_val,
+    )
+
+
 def get_signal_r2_linear(
     signal_true_train, signal_pred_train, signal_true_val, signal_pred_val
 ):
-    # Function to compare the latent activity
-    if len(signal_pred_train.shape) == 3:
-        n_b_pred, n_t_pred, n_d_pred = signal_pred_train.shape
-        signal_pred_train_flat = (
-            signal_pred_train.reshape(-1, n_d_pred).detach().numpy()
-        )
-        signal_pred_val_flat = signal_pred_val.reshape(-1, n_d_pred).detach().numpy()
-    else:
-        signal_pred_train_flat = signal_pred_train.detach().numpy()
-        signal_pred_val_flat = signal_pred_val.detach().numpy()
-
-    if len(signal_true_train.shape) == 3:
-        n_b_true, n_t_true, n_d_true = signal_true_train.shape
-        signal_true_train_flat = (
-            signal_true_train.reshape(-1, n_d_true).detach().numpy()
-        )
-        signal_true_val_flat = signal_true_val.reshape(-1, n_d_true).detach().numpy()
-    else:
-        signal_true_train_flat = signal_true_train.detach().numpy()
-        signal_true_val_flat = signal_true_val.detach().numpy()
-
-    # Compare the latent activity
-    reg = LinearRegression().fit(signal_true_train_flat, signal_pred_train_flat)
-    preds = reg.predict(signal_true_val_flat)
-    signal_r2_linear = r2_score(
-        signal_pred_val_flat, preds, multioutput="variance_weighted"
+    """Compatibility wrapper for the historical true-to-predicted mapping."""
+    warnings.warn(
+        "get_signal_r2_linear is ambiguous; use compute_affine_mapping_r2 with "
+        "explicit source and target arguments.",
+        DeprecationWarning,
+        stacklevel=2,
     )
-    return signal_r2_linear
+    return compute_affine_mapping_r2(
+        source_train=signal_true_train,
+        target_train=signal_pred_train,
+        source_val=signal_true_val,
+        target_val=signal_pred_val,
+    )
+
+
+def compute_aligned_signal_r2(*, reference_signal, comparison_signal):
+    """Score signals whose features are already aligned one-to-one.
+
+    No mapping is fit. Samples are flattened across leading dimensions, and
+    the returned score is the variance-weighted R² across feature dimensions.
+    This is used for Rate R² because inferred and true rates refer to the same
+    recorded neurons.
+    """
+    reference_flat = _flatten_signal_samples(reference_signal, name="reference_signal")
+    comparison_flat = _flatten_signal_samples(
+        comparison_signal, name="comparison_signal"
+    )
+    if reference_flat.shape != comparison_flat.shape:
+        raise ValueError(
+            "Aligned signals must have the same flattened shape; got "
+            f"{reference_flat.shape} and {comparison_flat.shape}."
+        )
+    return r2_score(reference_flat, comparison_flat, multioutput="variance_weighted")
 
 
 def get_signal_r2(signal_true, signal_pred):
-    """
-    Function to compare the activity of the different model
-    without a linear transformation
-
-    Typically used for comparisons of rates to true rates
-    """
-    if len(signal_pred.shape) == 3:
-        n_b_pred, n_t_pred, n_d_pred = signal_pred.shape
-        signal_pred_flat = (
-            signal_pred.reshape(n_b_pred * n_t_pred, n_d_pred).detach().numpy()
-        )
-    else:
-        signal_pred_flat = signal_pred.detach().numpy()
-
-    if len(signal_true.shape) == 3:
-        n_b_true, n_t_true, n_d_true = signal_true.shape
-        signal_true_flat = (
-            signal_true.reshape(n_b_true * n_t_true, n_d_true).detach().numpy()
-        )
-    else:
-        signal_true_flat = signal_true.detach().numpy()
-
-    signal_r2 = r2_score(
-        signal_true_flat, signal_pred_flat, multioutput="variance_weighted"
+    """Deprecated alias for :func:`compute_aligned_signal_r2`."""
+    warnings.warn(
+        "get_signal_r2 was renamed to compute_aligned_signal_r2.",
+        DeprecationWarning,
+        stacklevel=2,
     )
-    return signal_r2
+    return compute_aligned_signal_r2(
+        reference_signal=signal_true,
+        comparison_signal=signal_pred,
+    )
 
 
 def get_cycle_consistency(
@@ -779,9 +835,7 @@ def kaplan_yorke_dimension(spectrum):
     return float(j + cumulative[j - 1] / denom)
 
 
-def compute_lyapunov_spectrum(
-    Js, dt=1, k=None, verbose=False, return_summary=False
-):
+def compute_lyapunov_spectrum(Js, dt=1, k=None, verbose=False, return_summary=False):
     """
     Full Lyapunov spectrum from a sequence of discrete Jacobian matrices.
 
@@ -965,9 +1019,9 @@ def compute_input_lyaps(
         if return_details:
             return exps, {
                 "per_s_exps": per_s_exps,  # (B, T, k), NaN where undefined
-                "argmax": topk_idx
-                if not squeeze
-                else topk_idx.squeeze(0),  # indices in flattened (s,k)
+                "argmax": (
+                    topk_idx if not squeeze else topk_idx.squeeze(0)
+                ),  # indices in flattened (s,k)
             }
         return exps
 
