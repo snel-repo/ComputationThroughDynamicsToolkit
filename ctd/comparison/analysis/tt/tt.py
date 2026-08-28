@@ -14,8 +14,8 @@ from ctd.comparison.fixedpoints import find_fixed_points
 from ctd.comparison.metrics import (
     compute_input_lyaps,
     compute_jacobians,
-    compute_lyapunov_spectrum,
     compute_lyaps,
+    compute_lyapunov_spectrum,
     kaplan_yorke_dimension,
 )
 
@@ -38,15 +38,18 @@ class Analysis_TT(Analysis):
         self.env = self.wrapper.task_env
         self.model = self.wrapper.model
         if use_train_dm:
-            with open(filepath + "datamodule_train.pkl", "rb") as f:
-                self.datamodule = pickle.load(f)
-                self.datamodule.prepare_data()
-                self.datamodule.setup()
+            datamodule_path = filepath + "datamodule_train.pkl"
         else:
-            with open(filepath + "datamodule_sim.pkl", "rb") as f:
-                self.datamodule = pickle.load(f)
-                self.datamodule.prepare_data()
-                self.datamodule.setup()
+            datamodule_path = filepath + "datamodule_sim.pkl"
+        with open(datamodule_path, "rb") as f:
+            self.datamodule = pickle.load(f)
+        datasets_ready = (
+            getattr(self.datamodule, "train_ds", None) is not None
+            and getattr(self.datamodule, "valid_ds", None) is not None
+        )
+        if not datasets_ready:
+            self.datamodule.prepare_data()
+            self.datamodule.setup()
         # self.env = self.datamodule.data_env.dataset_name
         # if the simulator exists
         if Path(filepath + "simulator.pkl").exists():
@@ -557,9 +560,7 @@ class Analysis_TT(Analysis):
         # Translate subset_frac into a concrete trial count when n_trials wasn't set
         if n_trials is None and subset_frac is not None:
             if not 0 < subset_frac <= 1:
-                raise ValueError(
-                    f"subset_frac must be in (0, 1]; got {subset_frac}"
-                )
+                raise ValueError(f"subset_frac must be in (0, 1]; got {subset_frac}")
             n_trials = max(1, int(round(subset_frac * latents.shape[0])))
 
         # Compute the Jacobians
@@ -641,9 +642,7 @@ class Analysis_TT(Analysis):
 
         if n_trials is None and subset_frac is not None:
             if not 0 < subset_frac <= 1:
-                raise ValueError(
-                    f"subset_frac must be in (0, 1]; got {subset_frac}"
-                )
+                raise ValueError(f"subset_frac must be in (0, 1]; got {subset_frac}")
             n_trials = max(1, int(round(subset_frac * latents.shape[0])))
 
         Jz, _, _ = compute_jacobians(

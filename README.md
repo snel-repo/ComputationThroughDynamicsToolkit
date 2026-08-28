@@ -155,8 +155,22 @@ Comparator is agnostic to the origin of the dataset, can operate equivalently on
 ## Contributing
 Talk to me!
 
+## Paper reproducibility and public data
+
+The figure-by-figure data manifest, compact publication-data exporter, and
+release checklist are documented in
+[paper_reproduction/README.md](paper_reproduction/README.md).
+The portable numerical publication-data snapshot is dedicated to the public
+domain under [CC0-1.0](paper_reproduction/DATA_LICENSE.md).
+
+
 ## License
-None yet
+
+CtDToolkit-authored code is released under the
+[BSD 3-Clause License](LICENSE). Separately licensed code retains its original
+license; in particular, `ctd/data_modeling/`, `libs/DSA`, and
+`libs/lfads-jslds` include MIT-licensed components. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
 
 
 ## Contact

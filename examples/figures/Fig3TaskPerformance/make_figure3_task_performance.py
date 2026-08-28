@@ -6,7 +6,8 @@ in an IDE that supports ``# %%`` cell delimiters.
 Panel sources (see ``../FIGURE_GENERATION.md``):
 
 * Panel B — 3BFF single-trial inputs / outputs (``outputs/panelB_3bff_io.pdf``)
-* Panel C — 3BFF canonical TT latents + cube fixed points (``outputs/panelC_3bff_fps.pdf``)
+* Panel C — 3BFF canonical TT latents + cube fixed points
+  (``outputs/panelC_3bff_fps.pdf``)
 * Panel E — MultiTask MemoryPro single-trial I/O (``outputs/panelE_multitask_io.pdf``)
 * Panel F — MultiTask MemoryPro fixed-point rings, mem1 + response combined
   (``outputs/panelF_multitask_mem_resp_combined.pdf``)
@@ -18,6 +19,8 @@ Panel sources (see ``../FIGURE_GENERATION.md``):
 
 Panels A (3BFF task schematic) and D (MultiTask schematic) are Illustrator-only.
 """
+
+# flake8: noqa: E402
 
 # %% [markdown]
 # ## Shared setup
@@ -38,7 +41,8 @@ import matplotlib as _mpl
 if "matplotlib.pyplot" not in _sys.modules:
     _mpl.use("Agg")
 
-import dotenv
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -47,25 +51,24 @@ from sklearn.decomposition import PCA
 
 plt.rcParams["font.family"] = ["Arial", "DejaVu Sans"]
 
-from ctd.comparison.analysis.dd.dd import Analysis_DD
 from ctd.comparison.analysis.tt.tasks.tt_MultiTask import Analysis_TT_MultiTask
 from ctd.comparison.analysis.tt.tasks.tt_RandomTarget import Analysis_TT_RandomTarget
 from ctd.comparison.analysis.tt.tt import Analysis_TT
 
-dotenv.load_dotenv(dotenv.find_dotenv())
-
 OUTPUT_DIR = "outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-HOME_DIR = os.environ["HOME_DIR"]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
-pathNBFF = HOME_DIR + "content/trained_models/task-trained/tt_3bff/"
+pathNBFF = str(REPO_ROOT / "pretrained" / "20241017_NBFF_NoisyGRU_NewFinal") + os.sep
 an_NBFF = Analysis_TT(run_name="NBFF", filepath=pathNBFF)
 
-pathMT = HOME_DIR + "content/trained_models/task-trained/tt_MultiTask/"
+pathMT = str(REPO_ROOT / "pretrained" / "20241113_MultiTask_NoisyGRU_Final2") + os.sep
 an_MT = Analysis_TT_MultiTask(run_name="MT", filepath=pathMT)
 
-pathRT = HOME_DIR + "content/trained_models/task-trained/tt_RandomTarget/"
+pathRT = (
+    str(REPO_ROOT / "pretrained" / "20241113_RandomTarget_NoisyGRU_Final2") + os.sep
+)
 an_RT = Analysis_TT_RandomTarget(run_name="RT", filepath=pathRT)
 
 # %%
@@ -115,11 +118,8 @@ plt.savefig(f"{OUTPUT_DIR}/panelB_3bff_io.pdf")
 # renders them on the unit cube alongside latent trajectories.
 
 # %%
-pathTT = HOME_DIR + "content/trained_models/task-trained/tt_3bff/"
+pathTT = pathNBFF
 an_TT = Analysis_TT(run_name="TT", filepath=pathTT, use_train_dm=True)
-
-pathDT = pathTT + "20250130_NBFF_LFADS_Viz/prefix=tt_3bff_max_epochs=500_seed=0/"
-an_DT = Analysis_DD.create(run_name="DT", filepath=pathDT, model_type="LFADS")
 
 tt_fps = an_TT.plot_fps(
     inputs=torch.zeros(3),

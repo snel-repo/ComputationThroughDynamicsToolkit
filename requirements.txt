@@ -21,7 +21,7 @@ ipywidgets
 opencv-python
 jax[cpu]
 geotorch
-dsa-metric @ git+https://github.com/mitchellostrow/DSA.git@main
+dsa-metric @ git+https://github.com/mitchellostrow/DSA.git@ee1d7e2df348dfb3713e3cb793e139bfd307ee54
 #torchvision==0.14
 #torchdata==0.5.1
 #torchaudio==0.13.1

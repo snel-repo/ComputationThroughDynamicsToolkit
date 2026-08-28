@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,13 +14,9 @@ from ctd.comparison.fixedpoints import find_fixed_points, find_fixed_points_coup
 
 class Analysis_TT_RandomTarget(Analysis_TT):
     def __init__(self, run_name, filepath):
-        # initialize superclass
         super().__init__(run_name, filepath)
-        self.tt_or_dt = "tt"
-        self.load_wrapper(filepath)
-        self.plot_path = (
-            "/home/csverst/Github/InterpretabilityBenchmark/"
-            f"interpretability/comparison/plots/{self.run_name}/"
+        self.plot_path = str(
+            Path(__file__).resolve().parents[3] / "plots" / self.run_name
         )
 
     def plot_latents_aligned(self, align_to="go_cue", pre_align=20, post_align=20):

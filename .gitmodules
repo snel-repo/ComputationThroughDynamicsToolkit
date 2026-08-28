@@ -1,3 +1,6 @@
 [submodule "libs/DSA"]
 	path = libs/DSA
 	url = https://github.com/mitchellostrow/DSA.git
+[submodule "libs/lfads-jslds"]
+	path = libs/lfads-jslds
+	url = https://github.com/davidzoltowski/lfads-jslds.git

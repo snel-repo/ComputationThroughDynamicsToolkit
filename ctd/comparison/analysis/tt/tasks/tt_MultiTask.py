@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -9,13 +11,9 @@ from ctd.comparison.fixedpoints import find_fixed_points
 
 class Analysis_TT_MultiTask(Analysis_TT):
     def __init__(self, run_name, filepath, use_train_dm=False):
-        # initialize superclass
-        super().__init__(run_name, filepath)
-        self.tt_or_dt = "tt"
-        self.load_wrapper(filepath, use_train_dm)
-        self.plot_path = (
-            "/home/csverst/Github/CtDBenchmark/"
-            f"ctd/comparison/plots/{self.run_name}/"
+        super().__init__(run_name, filepath, use_train_dm=use_train_dm)
+        self.plot_path = str(
+            Path(__file__).resolve().parents[3] / "plots" / self.run_name
         )
 
     def get_task_flag(self, task_to_analyze, phase="all"):

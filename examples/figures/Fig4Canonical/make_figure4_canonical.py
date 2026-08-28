@@ -4,13 +4,17 @@ Run as a script (`python make_figure4_canonical.py`) or cell-by-cell in an IDE
 that supports the ``# %%`` cell delimiter.
 """
 
+# flake8: noqa: E402
+
 # %% [markdown]
 # # Figure 4 — Combined panel notebook
 #
 # This notebook compiles the panel-producing code for **Figure 4** from:
 #
-# - `LearningProgress.ipynb` — TT training progression at epochs 10/50/100/250/500 (panel A right block).
-# - `CanonicalDatasetPerf.ipynb` — DD-inferred latents for 3BFF / MultiTask / RandomTarget (panels B, C, D).
+# - `LearningProgress.ipynb` — TT training progression at epochs
+#   10/50/100/250/500 (panel A right block).
+# - `CanonicalDatasetPerf.ipynb` — DD-inferred latents for 3BFF / MultiTask /
+#   RandomTarget (panels B, C, D).
 #
 # Each `## Panel X` heading precedes the producing code block. See
 # `../FIGURE_GENERATION.md` for the cross-figure index.
@@ -47,7 +51,6 @@ import numpy as np
 import torch
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score
 
 from ctd.comparison.analysis.dd.dd import Analysis_DD
 from ctd.comparison.analysis.tt.tt import Analysis_TT
@@ -63,20 +66,20 @@ np.random.seed(42)
 HOME_DIR = os.environ["HOME_DIR"]
 
 pathTT_10 = (
-    HOME_DIR
-    + "content/trained_models/task-trained/tt_3bff/20241107_NBFF_NoisyGRU_TrainingProcess_10/max_epochs=10_batch_size=1000_seed=0/"
+    HOME_DIR + "content/trained_models/task-trained/tt_3bff/"
+    "20241107_NBFF_NoisyGRU_TrainingProcess_10/max_epochs=10_batch_size=1000_seed=0/"
 )
 pathTT_50 = (
-    HOME_DIR
-    + "content/trained_models/task-trained/tt_3bff/20241107_NBFF_NoisyGRU_TrainingProcess_50/max_epochs=50_batch_size=1000_seed=0/"
+    HOME_DIR + "content/trained_models/task-trained/tt_3bff/"
+    "20241107_NBFF_NoisyGRU_TrainingProcess_50/max_epochs=50_batch_size=1000_seed=0/"
 )
 pathTT_100 = (
-    HOME_DIR
-    + "content/trained_models/task-trained/tt_3bff/20241107_NBFF_NoisyGRU_TrainingProcess_100/max_epochs=100_batch_size=1000_seed=0/"
+    HOME_DIR + "content/trained_models/task-trained/tt_3bff/"
+    "20241107_NBFF_NoisyGRU_TrainingProcess_100/max_epochs=100_batch_size=1000_seed=0/"
 )
 pathTT_250 = (
-    HOME_DIR
-    + "content/trained_models/task-trained/tt_3bff/20241107_NBFF_NoisyGRU_TrainingProcess_250/max_epochs=250_batch_size=1000_seed=0/"
+    HOME_DIR + "content/trained_models/task-trained/tt_3bff/"
+    "20241107_NBFF_NoisyGRU_TrainingProcess_250/max_epochs=250_batch_size=1000_seed=0/"
 )
 pathTT_500 = (
     HOME_DIR
@@ -191,13 +194,23 @@ path_LFADS_Sweep_RT = pathTT_RT + "20250130_RandomTarget_LFADS_Viz/"
 subfolders_LFADS_RT = [f.path for f in os.scandir(path_LFADS_Sweep_RT) if f.is_dir()]
 
 path_LDS_Sweep_RT = pathTT_RT + "20250814_RandomTarget_LDS_Sweep/"
-subfolders_LDS_RT = [f.path for f in os.scandir(path_LDS_Sweep_RT) if f.is_dir()]
+subfolders_LDS_RT = [
+    f.path
+    for f in os.scandir(path_LDS_Sweep_RT)
+    if f.is_dir() and f.name.endswith("_seed=0")
+]
+if len(subfolders_LDS_RT) != 1:
+    raise RuntimeError(
+        "Figure 4 expects exactly one RandomTarget LDS seed-0 run; found "
+        f"{len(subfolders_LDS_RT)} in {path_LDS_Sweep_RT}"
+    )
 
 
 # %% [markdown]
 # ## Panel B — 3BFF latents: TT vs. LFADS / GRU / LDS
 #
-# DD latents are aligned to TT latents with an optimal affine. Three representative trials shown with increasing opacity.
+# DD latents are aligned to TT latents with an optimal affine. Three
+# representative trials are shown with increasing opacity.
 
 # %%
 comparison_3BFF = Comparison(comparison_tag="3BFF")
@@ -301,7 +314,8 @@ plt.savefig("outputs/panelB_3bff_3dLats.pdf")
 # %% [markdown]
 # ## Panel C — MultiTask MemoryPro latents (TT vs. DD)
 #
-# Projected into the 3D subspace defined by response 1, response 2, and fixation output dimensions. Colored by correct response angle. Produces `MT.pdf`.
+# Projected into the 3D subspace defined by response 1, response 2, and fixation
+# output dimensions. Colored by correct response angle. Produces `MT.pdf`.
 
 # %%
 comparison_MT = Comparison(comparison_tag="MultiTask")
@@ -785,4 +799,6 @@ plt.show()
 # %% [markdown]
 # ## Interactive — pick a viewing angle for TT RandomTarget
 #
-# Drag the sliders for elevation / azimuth (and optional roll) until the trajectories look right, then copy the printed `view_init(...)` call into the Panel D and combined cells (replacing the current `view_init(20, 60)`).
+# Drag the sliders for elevation / azimuth (and optional roll) until the
+# trajectories look right, then copy the printed `view_init(...)` call into the
+# Panel D and combined cells (replacing the current `view_init(20, 60)`).
