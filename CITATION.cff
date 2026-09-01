@@ -33,9 +33,9 @@ repository-code: "https://github.com/snel-repo/ComputationThroughDynamicsToolkit
 repository-artifact: "https://doi.org/10.5281/zenodo.22236303"
 url: "https://github.com/snel-repo/ComputationThroughDynamicsToolkit"
 license: BSD-3-Clause
-version: 1.0.0
+version: 1.0.1
 identifiers:
-  - description: "The archived snapshot of CtDToolkit version 1.0.0."
+  - description: "The archived snapshot of CtDToolkit version 1.0.1."
     type: doi
     value: "10.5281/zenodo.22236303"
 keywords:
