@@ -64,12 +64,29 @@ Together the exporters cover Figure 4, Figures 5-6, S4-S5, S8-S9, S11-S16,
 and S1-S15 Tables. Figures generated deterministically from code or from the
 public Git LFS task-trained artifacts are identified separately in the manifest.
 
-## Remaining publication steps
+## Render directly from the publication-data deposit
 
-The quantitative snapshot is complete. A future convenience improvement would
-be to let every figure script render directly from the portable deposit files.
-Figure 3's task-trained artifacts are already public through Git LFS, but its
-figure script now resolves them from the public `pretrained/` directory.
+Install the pinned paper environment, extract the data archive, and run the
+portable renderer from the software repository root:
+
+```bash
+python -m pip install -r paper_reproduction/requirements-paper.txt
+python paper_reproduction/render_release_figures.py \
+  --data-root /path/to/CtDToolkit-publication-data-v1.0.0 \
+  --output-dir /tmp/ctdtoolkit-release-figures
+```
+
+The command verifies every entry in `SHA256SUMS.txt` before rendering and reads
+no trained models or pickle caches. It renders Figure 4, Figures 5--6, S4--S5,
+S8--S9, and S11--S16 from the portable CSV/JSON/NPZ files. Use `--figures` to
+select a subset.
+
+The accepted Figure 4, Figure 6, and S4 composites contain external schematic
+or manually assembled artwork. The renderer therefore emits their deposited
+numerical panels and labels the non-deposited panels explicitly; it does not
+claim to recreate unavailable Illustrator source. Figure 3 artifacts remain
+public through Git LFS, and its figure script resolves them from the public
+`pretrained/` directory.
 
 ## Release gates
 
