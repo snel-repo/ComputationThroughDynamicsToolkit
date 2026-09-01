@@ -462,6 +462,7 @@ def main():
             ROOT / "paper_reproduction" / name,
             args.output / name,
         )
+    shutil.copy2(ROOT / "DATA_LICENSE", args.output / "DATA_LICENSE")
     checksums(args.output)
     print(f"Wrote portable publication data to {args.output}")
 

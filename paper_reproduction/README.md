@@ -15,7 +15,8 @@ deposit should contain plotted values and compact derived arrays instead.
 `DATA_MANIFEST.tsv` records the coverage of every main and supplementary
 figure.
 The scope and canonical terms of the CC0 dedication are recorded in
-[`DATA_LICENSE.md`](DATA_LICENSE.md).
+[`DATA_LICENSE.md`](DATA_LICENSE.md), with the complete legal text in
+[`DATA_LICENSE`](DATA_LICENSE).
 
 
 ## Build the current portable snapshot

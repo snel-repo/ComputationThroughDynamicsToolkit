@@ -7,9 +7,9 @@ and related or neighboring rights to the CtDToolkit numerical publication-data
 snapshot using the Creative Commons CC0 1.0 Universal public-domain
 dedication.
 
-The canonical CC0 terms are available at:
-
-https://creativecommons.org/publicdomain/zero/1.0/
+The complete legal text accompanies the snapshot as [`DATA_LICENSE`](DATA_LICENSE)
+and is also available from
+<https://creativecommons.org/publicdomain/zero/1.0/>.
 
 ## Scope
 

@@ -57,13 +57,22 @@ git lfs pull --include="pretrained/**"
 
 The toolkit imports Dynamical Similarity Analysis as `DSA`. The pip-installable dependency is `dsa-metric`, installed from the upstream DSA GitHub repository by `pip install -e .`. Do not install the unrelated PyPI package named `dsa`. If pip reports `No matching distribution found for dsa`, make sure `requirements.txt` contains `dsa-metric @ git+https://github.com/mitchellostrow/DSA.git@main`, then retry the editable install.
 
-Set `HOME_DIR` in `.env` to the repository root. Include the trailing slash if you edit it by hand, for example:
+Create a local `.env` from the tracked template, then set `HOME_DIR` to the
+repository root:
 
+```bash
+cp .env.example .env
 ```
+
+Include the trailing slash if you edit `HOME_DIR` by hand, for example:
+
+```dotenv
 HOME_DIR=/absolute/path/to/ComputationThroughDynamicsToolkit/
 ```
 
-The canonical dataset script now falls back to the repository root if `HOME_DIR` is not set, but the training and analysis modules still expect `.env` to point at the directory where `content/` should be created.
+The local `.env` is ignored by Git. The canonical dataset script falls back to
+the repository root if `HOME_DIR` is not set, but the training and analysis
+modules still expect it to identify where `content/` should be created.
 
 Included in CtdToolkit are three primary external packages:
 
@@ -113,7 +122,8 @@ To get an overview of the major components of the code-base, only three files ar
 2. examples/run_data_training.py
 3. examples/compare_dd_tt_models.ipynb
 
-Before running these scripts, you will need to modify the HOME_DIR variable in your .env file to a location where you'd like to save the outputs of the runs (datasets, logging info, trained models).
+Before running these scripts, copy `.env.example` to `.env` and set `HOME_DIR`
+to the location where datasets, logs, and trained models should be saved.
 
 No GPU? `run_task_training.py` defaults to `resources_per_trial=dict(cpu=4, gpu=0)`, so it trains entirely on CPU out of the box. `run_data_training.py` defaults to `gpu=0.45` (requesting a fraction of a GPU); if you don't have one, change that to `gpu=0` before running it, otherwise Ray Tune will hang waiting for a GPU that never appears.
 
@@ -161,16 +171,25 @@ The figure-by-figure data manifest, compact publication-data exporter, and
 release checklist are documented in
 [paper_reproduction/README.md](paper_reproduction/README.md).
 The portable numerical publication-data snapshot is dedicated to the public
-domain under [CC0-1.0](paper_reproduction/DATA_LICENSE.md).
+domain under [CC0-1.0](DATA_LICENSE).
 
 
 ## License
 
 CtDToolkit-authored code is released under the
-[BSD 3-Clause License](LICENSE). Separately licensed code retains its original
-license; in particular, `ctd/data_modeling/`, `libs/DSA`, and
-`libs/lfads-jslds` include MIT-licensed components. See
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
+[BSD 3-Clause License](LICENSE). Project-authored datasets and released
+data/model artifacts are dedicated to the public domain under
+[CC0 1.0 Universal](DATA_LICENSE). See [LICENSES.md](LICENSES.md) for the exact
+scope and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for separately
+licensed components.
+
+
+## Citation and releases
+
+Citation metadata are provided in [CITATION.cff](CITATION.cff). The version of
+record for the accepted manuscript will be released as `v1.0.0`; use that tag
+when reproducing the published results. The release page and associated
+persistent identifiers will be linked here when the release is published.
 
 
 ## Contact
