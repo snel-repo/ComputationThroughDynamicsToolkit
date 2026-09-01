@@ -18,6 +18,14 @@ The scope and canonical terms of the CC0 dedication are recorded in
 [`DATA_LICENSE.md`](DATA_LICENSE.md), with the complete legal text in
 [`DATA_LICENSE`](DATA_LICENSE).
 
+## Persistent identifiers
+
+- Software archive: [doi:10.5281/zenodo.22236303](https://doi.org/10.5281/zenodo.22236303)
+- Publication-data archive: [doi:10.5281/zenodo.22236312](https://doi.org/10.5281/zenodo.22236312)
+
+Machine-readable citation metadata for the publication-data archive are in
+[`CITATION.cff`](CITATION.cff).
+
 
 ## Build the current portable snapshot
 

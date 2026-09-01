@@ -1,10 +1,11 @@
 cff-version: 1.2.0
-message: "If you use CtDToolkit, please cite the software using this metadata."
-title: "Computation-through-Dynamics Toolkit"
+message: "If you use these publication data, please cite them using this metadata."
+title: "CtDToolkit publication data"
 abstract: >-
-  A toolkit providing synthetic neural datasets, model-training workflows,
-  and quality metrics for evaluating dynamical models of neural activity.
-type: software
+  Portable numerical publication-data snapshot for the
+  Computation-through-Dynamics Toolkit manuscript accepted by PLOS
+  Computational Biology.
+type: dataset
 authors:
   - family-names: Versteeg
     given-names: Christopher
@@ -29,18 +30,16 @@ authors:
     given-names: David
   - family-names: Pandarinath
     given-names: Chethan
-repository-code: "https://github.com/snel-repo/ComputationThroughDynamicsToolkit"
-repository-artifact: "https://doi.org/10.5281/zenodo.22236303"
-url: "https://github.com/snel-repo/ComputationThroughDynamicsToolkit"
-license: BSD-3-Clause
+repository: "https://doi.org/10.5281/zenodo.22236312"
+license: CC0-1.0
 version: 1.0.0
 identifiers:
-  - description: "The archived snapshot of CtDToolkit version 1.0.0."
+  - description: "The archived CtDToolkit publication-data snapshot version 1.0.0."
     type: doi
-    value: "10.5281/zenodo.22236303"
+    value: "10.5281/zenodo.22236312"
 keywords:
   - neural dynamics
   - computational neuroscience
-  - synthetic datasets
+  - reproducibility
+  - publication data
   - dynamical systems
-  - model evaluation

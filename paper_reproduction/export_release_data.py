@@ -452,6 +452,7 @@ def main():
     compiled_metrics(args.cache_root, args.output)
     supporting_tables(args.si_dir, args.output)
     for name in (
+        "CITATION.cff",
         "DATA_LICENSE.md",
         "DATA_MANIFEST.tsv",
         "README.md",
