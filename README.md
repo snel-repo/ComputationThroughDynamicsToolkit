@@ -187,10 +187,10 @@ licensed components.
 ## Citation and releases
 
 Citation metadata are provided in [CITATION.cff](CITATION.cff). The version of
-record for the accepted manuscript is `v1.0.1`; use that tag when reproducing
+record for the accepted manuscript is `v1.0.2`; use that tag when reproducing
 the published results.
 
-- Software archive: [doi:10.5281/zenodo.22236303](https://doi.org/10.5281/zenodo.22236303)
+- Software archive (all versions): [doi:10.5281/zenodo.22236302](https://doi.org/10.5281/zenodo.22236302)
 - Publication-data archive: [doi:10.5281/zenodo.22236312](https://doi.org/10.5281/zenodo.22236312)
 
 The software archive is licensed under BSD-3-Clause. The publication-data

@@ -30,14 +30,14 @@ authors:
   - family-names: Pandarinath
     given-names: Chethan
 repository-code: "https://github.com/snel-repo/ComputationThroughDynamicsToolkit"
-repository-artifact: "https://doi.org/10.5281/zenodo.22236303"
+repository-artifact: "https://doi.org/10.5281/zenodo.22236302"
 url: "https://github.com/snel-repo/ComputationThroughDynamicsToolkit"
 license: BSD-3-Clause
-version: 1.0.1
+version: 1.0.2
 identifiers:
-  - description: "The archived snapshot of CtDToolkit version 1.0.1."
+  - description: "The archived snapshot of CtDToolkit version 1.0.2."
     type: doi
-    value: "10.5281/zenodo.22236303"
+    value: "10.5281/zenodo.22238472"
 keywords:
   - neural dynamics
   - computational neuroscience

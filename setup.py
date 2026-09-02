@@ -14,7 +14,7 @@ def read_requirements(path):
 requirements = read_requirements("requirements.txt")
 setup(
     name="ctd",
-    version="1.0.1",
+    version="1.0.2",
     description="Computation-Through-Dynamics Toolkit",
     url="https://github.com/snel-repo/ComputationThroughDynamicsToolkit",
     license="BSD-3-Clause",

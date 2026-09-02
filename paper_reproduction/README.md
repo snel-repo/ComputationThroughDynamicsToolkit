@@ -20,7 +20,7 @@ The scope and canonical terms of the CC0 dedication are recorded in
 
 ## Persistent identifiers
 
-- Software archive: [doi:10.5281/zenodo.22236303](https://doi.org/10.5281/zenodo.22236303)
+- Software archive (all versions): [doi:10.5281/zenodo.22236302](https://doi.org/10.5281/zenodo.22236302)
 - Publication-data archive: [doi:10.5281/zenodo.22236312](https://doi.org/10.5281/zenodo.22236312)
 
 Machine-readable citation metadata for the publication-data archive are in
