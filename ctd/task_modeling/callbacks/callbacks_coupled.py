@@ -155,6 +155,8 @@ class LatentTrajectoryPlot(pl.Callback):
             lats_train = pca1.fit_transform(lats_train.reshape(-1, n_lat_dim))
             lats_train = lats_train.reshape(n_trials, n_times, 3)
             exp_var = np.sum(pca1.explained_variance_ratio_)
+        else:
+            exp_var = 1.0
 
         # Plot trajectories
         fig = plt.figure(figsize=(10, 10))

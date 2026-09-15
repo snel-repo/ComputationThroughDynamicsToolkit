@@ -4,8 +4,8 @@ dataset: NBFF
 encoder_size: 100
 encoder_window: -1
 
-heldin_size: 50
-heldout_size: 60
+heldin_size: 500
+heldout_size: 600
 latent_size: 128
 input_size: 3
 
