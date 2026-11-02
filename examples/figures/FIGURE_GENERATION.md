@@ -52,6 +52,13 @@ existing default 3BFF sweep. Optional `pcm` redirects manuscript copies into
 the new job folder. Existing figure caches and manuscript panels are not
 overwritten.
 
+Some retained Figure 6 LFADS checkpoints contain 50 encoder neurons and 50
+reconstructed neurons, with no held-out channels. Their co-BPS is undefined
+and is recorded as NaN with a warning. Figure 6 uses explicitly labeled
+reconstruction BPS on all neurons for the entire sweep whenever any model
+lacks a finite co-BPS; it does not present this score as held-out performance.
+Older Figure 6 metric caches without this distinction are rebuilt.
+
 This workflow does not train models, export a new publication-data deposit, or
 rebuild the manuscript. It does not cover every historical analysis: DSA
 figures, for example, still require their separate workflow. Existing Driscoll
