@@ -176,7 +176,6 @@ class LFADS(pl.LightningModule):
                 patience=hps.lr_patience,
                 threshold=0.0,
                 min_lr=hps.lr_stop,
-                verbose=True,
             )
             return {
                 "optimizer": optimizer,
@@ -235,7 +234,8 @@ class LFADS(pl.LightningModule):
         datamodule = self.trainer.datamodule
         if datamodule is None or not hasattr(datamodule, "train_data"):
             return
-        # train_data is (SessionBatch, extra_tensors); recon_data is (trials, time, neurons)
+        # train_data is (SessionBatch, extra_tensors).
+        # recon_data is (trials, time, neurons).
         recon_data = datamodule.train_data[0].recon_data
         if recon_data.shape[-1] != bias.numel():
             return
