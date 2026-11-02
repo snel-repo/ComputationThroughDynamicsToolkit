@@ -9,6 +9,11 @@ from matplotlib import pyplot as plt
 from sklearn.decomposition import PCA
 
 from ctd.comparison.analysis.analysis import Analysis
+from ctd.comparison.analysis.trial_lengths import (
+    get_trial_length_task,
+    resolve_trial_lengths,
+    trial_length_phases,
+)
 from ctd.comparison.fixedpoints import find_fixed_points
 from ctd.comparison.metrics import compute_jacobians, compute_lyaps
 from ctd.data_modeling.extensions.LFADS.utils import send_batch_to_device
@@ -331,9 +336,7 @@ class Analysis_DD(ABC, Analysis):
         # Translate subset_frac into a concrete trial count when n_trials wasn't set
         if n_trials is None and subset_frac is not None:
             if not 0 < subset_frac <= 1:
-                raise ValueError(
-                    f"subset_frac must be in (0, 1]; got {subset_frac}"
-                )
+                raise ValueError(f"subset_frac must be in (0, 1]; got {subset_frac}")
             n_trials = max(1, int(round(subset_frac * latents.shape[0])))
 
         # Compute the Jacobians
@@ -435,17 +438,16 @@ class Analysis_DD_SAE(Analysis_DD):
         return rates
 
     def get_trial_lens(self, phase="all"):
-        if phase == "all":
-            dd_train_ds = self.datamodule.train_ds
-            dd_val_ds = self.datamodule.valid_ds
-            trial_lens = torch.cat(
-                (dd_train_ds.tensors[3][:, -1], dd_val_ds.tensors[3][:, -1]), dim=0
+        task = get_trial_length_task(self.datamodule)
+        lengths = []
+        for split in trial_length_phases(phase):
+            dataset = getattr(
+                self.datamodule, "train_ds" if split == "train" else "valid_ds"
             )
-        elif phase == "train":
-            trial_lens = self.datamodule.train_ds.tensors[3][:, -1]
-        elif phase == "val":
-            trial_lens = self.datamodule.valid_ds.tensors[3][:, -1]
-        return trial_lens
+            lengths.append(
+                resolve_trial_lengths(dataset.tensors[1], task, dataset.tensors[3])
+            )
+        return torch.cat(lengths)
 
     def get_spiking(self, phase="all"):
         if phase == "all":
@@ -463,32 +465,37 @@ class Analysis_DD_SAE(Analysis_DD):
 
 class Analysis_DD_LFADS(Analysis_DD):
     def get_trial_lens(self, phase="all"):
-        dd_extra = []
-        if phase == "all":
-            train_dl = self.datamodule.train_dataloader(shuffle=False)
-            val_dl = self.datamodule.val_dataloader()
-            for batch in train_dl:
-                # Move data to the right device
-                train_extra = batch[1][3][:, -1]
-                dd_extra.append(train_extra)
-            for batch in val_dl:
-                # Move data to the right device
-                val_extra = batch[1][3][:, -1]
-                dd_extra.append(val_extra)
-        elif phase == "train":
-            train_dl = self.datamodule.train_dataloader(shuffle=False)
-            for batch in train_dl:
-                # Move data to the right device
-                train_extra = batch[1][3][:, -1]
-                dd_extra.append(train_extra)
-        elif phase == "val":
-            val_dl = self.datamodule.val_dataloader()
-            for batch in val_dl:
-                # Move data to the right device
-                val_extra = batch[1][3][:, -1]
-                dd_extra.append(val_extra)
-        dd_extra = torch.cat(dd_extra, dim=0)
-        return dd_extra
+        task = get_trial_length_task(self.datamodule)
+        keys = list(self.datamodule.hparams.get("batch_keys", []))
+        if task == "multitask" and "extra" not in keys:
+            raise ValueError(
+                "MultiTask requires 'extra' in LFADS batch_keys for trial ends."
+            )
+        lengths = []
+        for split in trial_length_phases(phase):
+            loader = (
+                self.datamodule.train_dataloader(shuffle=False)
+                if split == "train"
+                else self.datamodule.val_dataloader()
+            )
+            for batch, metadata in loader:
+                extra = None
+                if task == "multitask":
+                    index = keys.index("extra")
+                    if index >= len(metadata):
+                        raise ValueError(
+                            "LFADS batch is missing configured 'extra' metadata."
+                        )
+                    extra = metadata[index]
+                lengths.append(
+                    resolve_trial_lengths(
+                        batch.recon_data,
+                        task,
+                        extra,
+                        sequence_length=self.model.hparams.recon_seq_len,
+                    )
+                )
+        return torch.cat(lengths)
 
     def get_model_inputs(self, phase="all"):
         if phase == "all":
