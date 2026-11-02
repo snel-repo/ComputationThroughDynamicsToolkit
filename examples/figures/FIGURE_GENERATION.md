@@ -1,5 +1,64 @@
 # Figure Generation Index
 
+## Regeneration after the metric and analysis fixes
+
+The `fix/regenerate-affected-figures` integration branch combines the co-BPS,
+analysis inference, trial-length, input-trimming, scheduler, Driscoll, and LDS
+fixes. It does not merge them into `main`.
+
+Activate your figure-generation environment and run from the repository root:
+
+```bash
+git switch fix/regenerate-affected-figures
+
+# Inspect the plan; no model imports, computation, or files are created.
+python examples/figures/regenerate_affected_figures.py --dry-run
+
+# Recompute Figures 5–6 and supplementary metric sweeps for all five datasets.
+python examples/figures/regenerate_affected_figures.py \
+  --home-dir /path/to/CtDBenchmark \
+  --output-root outputs/fixed_figures_run1
+
+# A smaller first run: Figure 5 only.
+python examples/figures/regenerate_affected_figures.py \
+  --jobs fig5 --output-root outputs/fixed_fig5_run1
+
+# Additional extracted panels affected by analysis inference behavior.
+python examples/figures/regenerate_affected_figures.py \
+  --jobs fig4 pcm nlcycle --output-root outputs/fixed_panels_run1
+```
+
+`--home-dir` defaults to this checkout. It must contain the full retained
+`content/trained_models/task-trained` tree; walkthrough models and the compact
+publication-data deposit are insufficient. The explicit data root takes
+precedence over `.env` settings within each worker. Use the same Python and
+dependency versions as your previous figure run to limit unrelated differences.
+
+The runner creates a new directory exclusively and refuses to reuse an existing
+one. Each job has its own caches, `outputs/`, and `run.log`; `manifest.json`
+records commands, revision, source hashes, package versions, timing, and exit
+codes. Jobs run sequentially in separate interpreters with the Agg backend and
+four compute threads by default (`--threads` overrides this). Seeds default to
+zero (`--seed`), although individual figure scripts may set their own seeds.
+A failed job is recorded and later jobs still run; any failure returns a
+nonzero exit status. Inspect logs before accepting outputs.
+
+Figure 5 runs only through its paper `main` guard, skipping the trailing
+interactive browser cells. Figure 6 recomputes both its metrics and fixed-point
+cache so extracted trajectories reflect the new inference behavior. Compiled
+metric sweeps use `--recompute --strict`, preventing silent dataset skips.
+`--tasks NBFF` restricts only the compiled metric job; `nlcycle` uses its
+existing default 3BFF sweep. Optional `pcm` redirects manuscript copies into
+the new job folder. Existing figure caches and manuscript panels are not
+overwritten.
+
+This workflow does not train models, export a new publication-data deposit, or
+rebuild the manuscript. It does not cover every historical analysis: DSA
+figures, for example, still require their separate workflow. Existing Driscoll
+checkpoints require retraining for the corrected recurrence; regenerating
+figures alone cannot supply that retraining. Full regeneration must be run and
+reviewed before claiming corrected paper results.
+
 This document tracks how each panel in the CtDToolkit paper figures is produced
 by code in this repository.
 
