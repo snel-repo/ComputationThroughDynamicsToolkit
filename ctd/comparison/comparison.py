@@ -1,4 +1,5 @@
 import time
+import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -286,20 +287,40 @@ class Comparison:
                     )
                     metrics_dict[metric].append(geometry_score)
 
-                elif metric in ["co-bps"]:
+                elif metric in ["co-bps", "bps"]:
                     # Encoder spike channels are held-in neurons; task inputs
                     # have a separate, unrelated channel count.
                     n_heldin = (
-                        self.analyses[i].get_model_inputs(phase="val")[0].shape[-1]
+                        0
+                        if metric == "bps"
+                        else (
+                            self.analyses[i].get_model_inputs(phase="val")[0].shape[-1]
+                        )
                     )
+                    n_neurons = inf_rates_val.shape[-1]
+                    if inp_spikes_val.shape != inf_rates_val.shape:
+                        raise ValueError("BPS requires matching rate and spike shapes.")
+                    if not 0 <= n_heldin <= n_neurons:
+                        raise ValueError(
+                            "Held-in neuron count exceeds reconstructed channels."
+                        )
+                    if n_heldin == n_neurons:
+                        warnings.warn(
+                            f"co-BPS unavailable for {self.analyses[i].run_name}: "
+                            "no held-out neurons; returning NaN. Use 'bps' for "
+                            "reconstruction BPS on all neurons.",
+                            RuntimeWarning,
+                        )
+                        metrics_dict[metric].append(float("nan"))
+                        continue
                     inf_rates_co = inf_rates_val[..., n_heldin:]
                     spiking_co = inp_spikes_val[..., n_heldin:]
                     bps = get_bps(
                         inf_rates=inf_rates_co.detach().numpy(),
                         true_spikes=spiking_co,
                     )
-                    print(f"    CO-BPS: {bps}", flush=True)
-                    metrics_dict["co-bps"].append(bps)
+                    print(f"    {metric.upper()}: {bps}", flush=True)
+                    metrics_dict[metric].append(bps)
                 elif metric in ["cycle_con"]:
                     cycle_con_var = metric_dict_list[metric].get(
                         "variance_threshold", 0.01
