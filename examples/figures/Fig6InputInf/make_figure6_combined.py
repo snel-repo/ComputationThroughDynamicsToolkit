@@ -238,6 +238,13 @@ def load_comparison():
 # model's inferred inputs. Model-selection-agnostic: changing which model is
 # "good" or "bad" later does NOT invalidate this cache. Written to disk before
 # the FP optimization starts.
+def reconstruction_bps_axis(metrics):
+    """Choose one consistently labeled reconstruction metric for the sweep."""
+    if np.isfinite(np.asarray(metrics["co-bps"])).all():
+        return "co-bps", "co-BPS"
+    return "bps", "Reconstruction BPS (all neurons)"
+
+
 def build_metrics_payload(force: bool, cache_path: Path):
     """Return (metrics_payload, live_handles_or_None).
 
@@ -257,8 +264,9 @@ def build_metrics_payload(force: bool, cache_path: Path):
         "ineffective",
         "kl_co_scales",
         "seed",
+        "reconstruction_metric",
     }
-    required_metric_keys = {"input_r2", "input_r2_true_to_inferred"}
+    required_metric_keys = {"input_r2", "input_r2_true_to_inferred", "bps", "co-bps"}
     if cache_path.exists() and not force:
         with cache_path.open("rb") as f:
             payload = pickle.load(f)
@@ -283,8 +291,11 @@ def build_metrics_payload(force: bool, cache_path: Path):
         "input_r2_true_to_inferred": {},
         "cycle_con": {"variance_threshold": 0.01},
         "co-bps": {},
+        "bps": {},
     }
     metrics = comparison.compute_metrics(metric_dict_list=metric_dict_list)
+    reconstruction_metric, reconstruction_label = reconstruction_bps_axis(metrics)
+    print(f"Panel C reconstruction metric: {reconstruction_label}")
 
     dd_analyses = [a for a in comparison.analyses if isinstance(a, Analysis_DD)]
     run_names = [a.run_name for a in dd_analyses]
@@ -313,6 +324,7 @@ def build_metrics_payload(force: bool, cache_path: Path):
     ineff_mat = ineffective_inputs(true_inputs)
 
     payload = {
+        "reconstruction_metric": reconstruction_metric,
         "metrics": metrics,
         "kl_co_scales": kl_co_scales,
         "run_names": run_names,
@@ -349,12 +361,13 @@ metrics_payload, _live = build_metrics_payload(force_metrics, args.metrics_cache
 
 def _print_model_table(payload: dict) -> None:
     metrics = payload["metrics"]
+    reconstruction_metric, _ = reconstruction_bps_axis(metrics)
     run_names = payload["run_names"]
     dd_metric_by_run = {
         rn: {
             "input_r2": float(metrics["input_r2"][i]),
             "input_r2_true_to_inferred": float(metrics["input_r2_true_to_inferred"][i]),
-            "co-bps": float(metrics["co-bps"][i]),
+            "reconstruction_bps": float(metrics[reconstruction_metric][i]),
             "cycle_con": float(metrics["cycle_con"][i]),
             "rate_r2": float(metrics["rate_r2"][i]),
         }
@@ -363,7 +376,7 @@ def _print_model_table(payload: dict) -> None:
     header = (
         f"{'idx':>3}  {'type':<14}  {'run_name':<42}  "
         f"{'input_i2t':>9}  {'legacy_t2i':>10}  {'delta':>8}  "
-        f"{'co-bps':>8}  {'cycle':>7}"
+        f"{reconstruction_metric:>8}  {'cycle':>7}"
     )
     print(header)
     print("-" * len(header))
@@ -376,7 +389,7 @@ def _print_model_table(payload: dict) -> None:
             metric_str = (
                 f"{m['input_r2']:>9.3f}  "
                 f"{m['input_r2_true_to_inferred']:>10.3f}  "
-                f"{delta:>+8.3f}  {m['co-bps']:>8.3f}  "
+                f"{delta:>+8.3f}  {m['reconstruction_bps']:>8.3f}  "
                 f"{m['cycle_con']:>7.3f}"
             )
         print(
@@ -816,7 +829,10 @@ def make_figure(payload: dict, trial_num: int, output_dir: Path) -> Path:
         hspace=0.25,
     )
     ax_C = fig.add_subplot(col1[0, 0])
-    _scatter_with_kl_legend(ax_C, np.asarray(metrics["co-bps"]), "co-BPS", "C")
+    reconstruction_metric, reconstruction_label = reconstruction_bps_axis(metrics)
+    _scatter_with_kl_legend(
+        ax_C, np.asarray(metrics[reconstruction_metric]), reconstruction_label, "C"
+    )
 
     ax_E = fig.add_subplot(col1[1, 0], projection="3d")
     _plot_fps_on_ax(
