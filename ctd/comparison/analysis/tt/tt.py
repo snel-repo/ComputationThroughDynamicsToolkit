@@ -63,9 +63,18 @@ class Analysis_TT(Analysis):
         self.trim_inds = self.simulator.trim_inds
 
     def get_inputs(self, phase="all"):
+        return self._get_trimmed_inputs(tensor_index=1, phase=phase)
+
+    def get_true_inputs(self, phase="all"):
+        return self._get_trimmed_inputs(tensor_index=7, phase=phase)
+
+    def _get_trimmed_inputs(self, tensor_index, phase):
+        """Select analysis inputs in the same time window as the latents."""
         train_ds = self.datamodule.train_ds
         valid_ds = self.datamodule.valid_ds
-        tt_inputs = torch.cat([train_ds.tensors[1], valid_ds.tensors[1]], dim=0)
+        tt_inputs = torch.cat(
+            [train_ds.tensors[tensor_index], valid_ds.tensors[tensor_index]], dim=0
+        )
 
         if self.trim_inds is not None:
             start = self.trim_inds[0] - 1
@@ -80,17 +89,6 @@ class Analysis_TT(Analysis):
             return tt_inputs[self.train_inds, start:end, :]
         elif phase == "val":
             return tt_inputs[self.valid_inds, start:end, :]
-
-    def get_true_inputs(self, phase="all"):
-        train_ds = self.datamodule.train_ds
-        valid_ds = self.datamodule.valid_ds
-        tt_inputs = torch.cat([train_ds.tensors[7], valid_ds.tensors[7]], dim=0)
-        if phase == "all":
-            return tt_inputs
-        elif phase == "train":
-            return tt_inputs[self.train_inds]
-        elif phase == "val":
-            return tt_inputs[self.valid_inds]
 
     def get_inputs_to_env(self, phase="all"):
         if phase == "all":
