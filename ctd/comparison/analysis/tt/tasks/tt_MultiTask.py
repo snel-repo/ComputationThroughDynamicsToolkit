@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from sklearn.decomposition import PCA
 
+from ctd.comparison.analysis.analysis import analysis_inference
 from ctd.comparison.analysis.tt.tt import Analysis_TT
 from ctd.comparison.fixedpoints import find_fixed_points
 
@@ -54,12 +55,15 @@ class Analysis_TT_MultiTask(Analysis_TT):
         elif phase == "val":
             return tt_ics, valid_noiseless_inputs, tt_targets
 
+    @analysis_inference("wrapper")
     def get_model_outputs_noiseless(self, phase="all"):
         tt_ics, tt_inputs, tt_targets = self.get_model_inputs_noiseless(phase=phase)
         dyn_noise = self.wrapper.dynamic_noise
         self.wrapper.dynamic_noise = 0.0
-        out_dict = self.wrapper(tt_ics, tt_inputs, tt_targets)
-        self.wrapper.dynamic_noise = dyn_noise
+        try:
+            out_dict = self.wrapper(tt_ics, tt_inputs, tt_targets)
+        finally:
+            self.wrapper.dynamic_noise = dyn_noise
         return out_dict
 
     def get_data_from_phase(self, phase_task, phase, data):
