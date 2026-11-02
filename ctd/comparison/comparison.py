@@ -289,7 +289,9 @@ class Comparison:
                 elif metric in ["co-bps"]:
                     # Encoder spike channels are held-in neurons; task inputs
                     # have a separate, unrelated channel count.
-                    n_heldin = self.analyses[i].get_model_inputs(phase="val")[0].shape[-1]
+                    n_heldin = (
+                        self.analyses[i].get_model_inputs(phase="val")[0].shape[-1]
+                    )
                     inf_rates_co = inf_rates_val[..., n_heldin:]
                     spiking_co = inp_spikes_val[..., n_heldin:]
                     bps = get_bps(

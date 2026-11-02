@@ -1227,6 +1227,17 @@ def draw_panel_i(ax):
 def make_figure(payload, output_dir: Path, dpi: int):
     metrics = payload["metrics"]
     metric_rows = payload["metric_rows"]
+    # Share the co-BPS range across panel C (x) and panel H (y), including
+    # all models and leaving a little room around the finite data range.
+    co_bps = np.asarray(metrics["co-bps"], dtype=float)
+    co_bps = co_bps[np.isfinite(co_bps)]
+    if co_bps.size and co_bps.max() > 0:
+        low = max(0.0, float(co_bps.min()))
+        high = float(co_bps.max())
+        pad = 0.06 * (high - low if high > low else high)
+        co_bps_limits = (max(0.0, low - pad), high + pad)
+    else:
+        co_bps_limits = (0.0, 1.0)
     plt.rcParams.update(
         {
             "font.family": ["Arial", "DejaVu Sans"],
@@ -1265,14 +1276,15 @@ def make_figure(payload, output_dir: Path, dpi: int):
             {}
             if noiseless
             else dict(
-                xlim=(0.07, 0.13),
                 ylim=(0.5, 1.05),
-                xticks=[0.07, 0.13],
                 yticks=[0.5, 1.0],
                 include_callouts_in_limits=False,
             )
         ),
     )
+    ax_c.set_xlim(co_bps_limits)
+    ax_c.set_xticks(co_bps_limits)
+    ax_c.set_xticklabels([format_tick(t, 2) for t in co_bps_limits])
     add_latent_size_legend(ax_c)
     set_panel_label(ax_c, "C")
 
@@ -1348,13 +1360,14 @@ def make_figure(payload, output_dir: Path, dpi: int):
             if noiseless
             else dict(
                 xlim=(0.5, 1.05),
-                ylim=(0.07, 0.13),
                 xticks=[0.5, 1.0],
-                yticks=[0.07, 0.13],
                 include_callouts_in_limits=False,
             )
         ),
     )
+    ax_h.set_ylim(co_bps_limits)
+    ax_h.set_yticks(co_bps_limits)
+    ax_h.set_yticklabels([format_tick(t, 2) for t in co_bps_limits])
     set_panel_label(ax_h, "H")
 
     ax_i = fig.add_subplot(gs[2, 2])
