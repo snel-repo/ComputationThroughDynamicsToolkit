@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from sklearn.decomposition import PCA
 
-from ctd.comparison.analysis.analysis import Analysis
+from ctd.comparison.analysis.analysis import Analysis, analysis_inference
 from ctd.comparison.dsa_compat import dsa_bw_data_splits, dsa_to_id
 from ctd.comparison.fixedpoints import find_fixed_points
 from ctd.comparison.metrics import (
@@ -155,12 +155,14 @@ class Analysis_TT(Analysis):
         elif phase == "val":
             return tt_ics, valid_noiseless_inputs, tt_targets
 
+    @analysis_inference("wrapper")
     def get_model_outputs(self, phase="all"):
         inputs_to_env = self.get_inputs_to_env(phase=phase)
         tt_ics, tt_inputs, tt_targets = self.get_model_inputs(phase=phase)
         out_dict = self.wrapper(tt_ics, tt_inputs, inputs_to_env)
         return out_dict
 
+    @analysis_inference("wrapper")
     def get_model_outputs_noiseless(self, phase="all"):
         inputs_to_env = self.get_inputs_to_env(phase=phase)
         tt_ics, tt_inputs, tt_targets = self.get_model_inputs_noiseless(phase=phase)

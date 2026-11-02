@@ -8,7 +8,7 @@ import torch
 from matplotlib import pyplot as plt
 from sklearn.decomposition import PCA
 
-from ctd.comparison.analysis.analysis import Analysis
+from ctd.comparison.analysis.analysis import Analysis, analysis_inference
 from ctd.comparison.fixedpoints import find_fixed_points
 from ctd.comparison.metrics import compute_jacobians, compute_lyaps
 from ctd.data_modeling.extensions.LFADS.utils import send_batch_to_device
@@ -331,9 +331,7 @@ class Analysis_DD(ABC, Analysis):
         # Translate subset_frac into a concrete trial count when n_trials wasn't set
         if n_trials is None and subset_frac is not None:
             if not 0 < subset_frac <= 1:
-                raise ValueError(
-                    f"subset_frac must be in (0, 1]; got {subset_frac}"
-                )
+                raise ValueError(f"subset_frac must be in (0, 1]; got {subset_frac}")
             n_trials = max(1, int(round(subset_frac * latents.shape[0])))
 
         # Compute the Jacobians
@@ -403,6 +401,7 @@ class Analysis_DD_SAE(Analysis_DD):
 
         return dd_spiking, dd_inputs
 
+    @analysis_inference("model")
     def get_model_outputs(self, phase="all"):
         dd_spiking, dd_inputs = self.get_model_inputs(phase=phase)
         dd_spiking = dd_spiking.to(self.model.device)
@@ -562,6 +561,7 @@ class Analysis_DD_LFADS(Analysis_DD):
         dd_rates = torch.cat(dd_rates, dim=0)
         return dd_rates
 
+    @analysis_inference("model")
     def get_inferred_inputs(self, phase="all"):
         dd_inf_inputs = []
         if phase == "all":
@@ -616,6 +616,7 @@ class Analysis_DD_LFADS(Analysis_DD):
         dd_inf_inputs = torch.cat(dd_inf_inputs, dim=0)
         return dd_inf_inputs
 
+    @analysis_inference("model")
     def get_model_outputs(self, phase="all"):
         dd_rates = []
         dd_latents = []
