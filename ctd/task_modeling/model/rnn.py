@@ -241,7 +241,7 @@ class DriscollRNN(nn.Module):
         pre = self.recW(hidden) + self.inpW(inputs) + self.bias
         if noise_level > 0:
             pre = pre + torch.randn_like(pre) * noise_level
-        return (1 - self.gamma) * self.recW(hidden) + self.gamma * self.act_func(pre)
+        return (1 - self.gamma) * hidden + self.gamma * self.act_func(pre)
 
     @property
     def cell(self):
