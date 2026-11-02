@@ -120,7 +120,6 @@ class Comparison:
             )
 
             t0 = time.perf_counter()
-            n_input_neurons = self.analyses[i].get_inputs()[0].shape[-1]
             inf_rates_train, inf_latents_train = self.analyses[i].get_model_outputs(
                 phase="train"
             )
@@ -288,8 +287,11 @@ class Comparison:
                     metrics_dict[metric].append(geometry_score)
 
                 elif metric in ["co-bps"]:
-                    inf_rates_co = inf_rates_val[..., n_input_neurons:]
-                    spiking_co = inp_spikes_val[..., n_input_neurons:]
+                    # Encoder spike channels are held-in neurons; task inputs
+                    # have a separate, unrelated channel count.
+                    n_heldin = self.analyses[i].get_model_inputs(phase="val")[0].shape[-1]
+                    inf_rates_co = inf_rates_val[..., n_heldin:]
+                    spiking_co = inp_spikes_val[..., n_heldin:]
                     bps = get_bps(
                         inf_rates=inf_rates_co.detach().numpy(),
                         true_spikes=spiking_co,
